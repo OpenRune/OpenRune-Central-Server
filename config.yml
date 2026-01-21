@@ -1,0 +1,18 @@
+rev: 235
+name: "OpenRune"
+websiteUrl: "https://openrune.dev"
+
+storage:
+  type: "flat_gson"
+  flatGson:
+    baseDir: "data/storage"
+
+worlds:
+  - id: 1
+    address: "127.0.0.1"
+    activity: "Dev"
+    location: "UNITED_STATES"
+    types: ["MEMBERS"]
+    authPublicKey: "MCowBQYDK2VwAyEAOyFt8oZRAmQyt82cZ_aG7uJRSrB6LjXAZN7J7vbM4yk"
+
+

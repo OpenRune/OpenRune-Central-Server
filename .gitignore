@@ -1,0 +1,12 @@
+.gradle/
+build/
+out/
+.idea/
+*.iml
+
+# generated secrets
+data/
+
+
+java_local.meta
+java_local.ws
