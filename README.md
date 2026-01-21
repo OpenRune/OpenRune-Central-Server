@@ -1,107 +1,100 @@
-## OpenRune Central Server (Ktor)
+## OpenRune Central Server
 
-Central HTTP server for things like login, PMs, and world status (players online per world).
+Central HTTP service used by world servers (private API) and clients/tools (public API).
 
-### APIs
-
-- **Public API**: no auth required
-- **Private API**: world servers authenticate using world id + public/private keys
+Default bind: `0.0.0.0:8080` (see `central/src/main/resources/application.conf`).
 
 ### Running
 
-- **Windows (PowerShell)**:
+#### Run with Gradle
 
 ```powershell
 .\gradlew.bat :central:run
 ```
 
-Before starting, edit the root `config.yml` (required).
+The server loads `config.yml` from the working directory; if not found, it searches parent directories for `config.yml`.
 
-Server runs on `http://localhost:8081`.
+#### Run embedded (from another JVM/app)
 
-On first run it will create `java_local.ws` (if missing) (do not commit if you treat it as generated).
+If you embed the central server inside another app, use `dev.openrune.central.CentralServer.start(...)`:
 
-### config.yml
+```kotlin
+val engine = CentralServer.start(
+    configPath = Paths.get("C:/path/to/central-server.yml"),
+    rev = 235
+)
+```
+
+`CentralServer.start(...)` starts Netty in the background and blocks only until Ktor reports the application has started.
+
+### Configuration (config.yml)
 
 Required keys:
 
-- `rev`
-- `name`
-- `websiteUrl`
-- `storage`
-- `worlds`
+- `rev` (int)
+- `name` (string)
+- `websiteUrl` (string)
+- `storage` (object)
+- `worlds` (list)
 
-### Public API examples
+Storage backends:
 
-- **List worlds**
+- `storage.type: flat_gson`
+- `storage.type: mongo`
+- `storage.type: postgres`
 
-`GET /api/public/worlds`
+### Public HTTP API (no auth)
 
-- **World by id**
+Base path: `/api/public`
 
-`GET /api/public/worlds/world-1`
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/public/health` | Health check |
+| GET | `/api/public/worlds` | List worlds (includes `playersOnline`) |
+| GET | `/api/public/worlds/{id}` | World by id |
+| GET | `/api/public/players/world` | Players online per world (cached) |
+| GET | `/api/public/players/world/{id}` | Players online for one world |
 
-### Client bootstrap files
+Other public endpoints:
 
-- **java_local.ws** (plain text)
+| Method | Path | Description |
+|---|---|---|
+| GET | `/worldlist.ws` | Worldlist binary payload |
+| GET | `/java_local.ws` | Client bootstrap `java_local.ws` |
 
-`GET /java_local.ws`
+### Private HTTP API (world servers)
 
-The server will create `java_local.ws` in the repo root on startup if missing, by downloading
-`https://client.blurite.io/jav_local_{rev}.ws` (using your `config.yml` `rev`) and patching:
+Base path: `/api/private`
 
-- `title` → `config.yml` `name`
-- `cachedir` → lowercased `name` (alphanumeric only)
-- `codebase` → first `World` entry address
-- `param=25` → `rev`
-- `param=17` → `{websiteUrl}/worldlist.ws`
-- `param=13` → `.{websiteUrl host}` (replaces `.runescape.com`)
-
-### Private API auth headers
-
-Every private request must include:
+Auth headers (required on every private request):
 
 - `X-World-Id`
-- `X-Timestamp`
-- `X-Signature`
+- `X-Timestamp` (unix ms)
+- `X-Signature` (Ed25519 signature)
 
-Public keys are stored in `config.yml` under `worlds[].authPublicKey`.
+Signature payload format:
 
-### Private API examples
+`{timestamp}\n{worldId}\n{method}\n{path}\n{body}`
 
-- **Login request** (stubbed for now; always allowed)
+Endpoints:
 
-`POST /api/private/login/request`
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/private/test` | Verifies signature end-to-end |
+| POST | `/api/private/login/request` | Login decision + login details |
+| POST | `/api/private/accounts/link` | Link a new account name to an existing login |
+| POST | `/api/private/logout` | Persist logout state and mark offline |
+| POST | `/api/private/player/save` | Persist a player save JSON blob |
+| POST | `/api/private/player/load` | Load a player save JSON blob |
+| POST | `/api/private/store/{bucket}/{id}` | Generic JSON upsert into storage |
+| POST | `/api/private/append/{bucket}` | Append JSON to a bucket log stream |
+| POST | `/api/private/logs` | Append a typed `Loggable` event |
 
-```powershell
-$worldId = 1
-$timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+### Key generation
 
-# Body that will be signed
-$body = (@{ username="bob"; password="test" } | ConvertTo-Json -Compress)
+Run `dev.openrune.central.tools.KeyGenKt` to generate an Ed25519 keypair:
 
-# You generate keys via KeyGen (see below) and the WORLD server keeps authPrivateKey.
-# This repo (central) stores authPublicKey in config.yml.
-# Signing example is world-server-side and depends on your runtime; implement Ed25519 sign of:
-# "{timestamp}\n{worldId}\nPOST\n/api/private/login/request\n{body}"
-$signature = "TODO"
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri "http://localhost:8081/api/private/login/request" `
-  -Headers @{
-    "X-World-Id" = "$worldId"
-    "X-Timestamp" = "$timestamp"
-    "X-Signature" = "$signature"
-  } `
-  -ContentType "application/json" `
-  -Body $body
-```
-
-### Key generation (world/private + central/public)
-
-Run `dev.openrune.central.tools.KeyGenKt` to generate a matching Ed25519 keypair:
-- **Central**: put the printed `authPublicKey` into `config.yml` under the world.
-- **World server**: keep the printed private key secret (`authPrivateKey`) and use it to sign private API requests.
+- Central stores the public key in `config.yml` under `worlds[].authPublicKey`
+- World server stores the private key (`authPrivateKey`) and signs private API requests
 
 
