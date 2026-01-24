@@ -1,36 +1,24 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
     kotlin("jvm") version "2.0.21" apply false
     kotlin("plugin.serialization") version "2.0.21" apply false
     id("maven-publish")
 }
 
-group = "dev.or2"
-version = "0.1.0"
-
-val publishingDir = System.getenv("HOSTING_DIRECTORY")
-    ?: "D:\\OpenRune\\openrune-hosting"
-
-allprojects {
-    repositories {
-        mavenCentral()
-        maven("https://raw.githubusercontent.com/OpenRune/hosting/master")
-        maven("https://jitpack.io")
-    }
-}
+val buildDirectory = System.getenv("HOSTING_DIRECTORY") ?: "D:\\openrune-hosting"
+val buildNumber = "1.0.0"
 
 subprojects {
     apply(plugin = "org.jetbrains.kotlin.jvm")
+    apply(plugin = "java-library")
     apply(plugin = "maven-publish")
     apply(plugin = "idea")
 
-    group = rootProject.group
-    version = rootProject.version
+    group = "dev.or2.central"
+    version = buildNumber
 
-    tasks.withType<KotlinCompile>().configureEach {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    plugins.withId("java") {
+        extensions.configure<JavaPluginExtension> {
+            withSourcesJar()
         }
     }
 
@@ -71,8 +59,72 @@ subprojects {
 
         repositories {
             maven {
-                url = uri(publishingDir)
+                url = uri(buildDirectory)
             }
         }
     }
 }
+
+val apiVersion = buildNumber
+val apiServerVersion = buildNumber
+val apiClientVersion = buildNumber
+
+group = "dev.or2.central"
+version = buildNumber
+
+publishing {
+    publications {
+        repositories {
+            maven {
+                url = uri(buildDirectory)
+            }
+        }
+
+        create<MavenPublication>("server") {
+            artifactId = "server"
+
+            pom {
+                name.set("OpenRune - server")
+                description.set("Aggregate module including both the client api and implementation for game-server.")
+                url.set("https://github.com/OpenRune/openrune-aggregates")
+
+                withXml {
+                    asNode().appendNode("dependencies").apply {
+                        addDependency("dev.or2.central", "api", apiVersion)
+                        addDependency("dev.or2.central", "api-server", apiServerVersion)
+                    }
+                }
+            }
+        }
+
+        create<MavenPublication>("client") {
+            artifactId = "client"
+
+            pom {
+                name.set("OpenRune - client")
+                description.set("Aggregate module including both the api and client implementation for game-server.")
+                url.set("https://github.com/OpenRune/openrune-aggregates")
+
+                withXml {
+                    asNode().appendNode("dependencies").apply {
+                        addDependency("dev.or2.central", "api", apiVersion)
+                        addDependency("dev.or2.central", "api-client", apiClientVersion)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun groovy.util.Node.addDependency(
+    groupId: String,
+    artifactId: String,
+    version: String,
+    scope: String = "compile",
+): groovy.util.Node =
+    appendNode("dependency").also { dep ->
+        dep.appendNode("groupId", groupId)
+        dep.appendNode("artifactId", artifactId)
+        dep.appendNode("version", version)
+        dep.appendNode("scope", scope)
+    }

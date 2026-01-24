@@ -1,17 +1,12 @@
 plugins {
-    kotlin("jvm")
     kotlin("plugin.serialization")
     application
-}
-
-repositories {
-    mavenCentral()
 }
 
 dependencies {
     implementation(platform("io.ktor:ktor-bom:2.3.12"))
 
-    implementation(project(":central-shared"))
+    implementation(project(":api"))
 
     implementation("io.ktor:ktor-server-core")
     implementation("io.ktor:ktor-server-netty")
@@ -36,9 +31,3 @@ dependencies {
 application {
     mainClass.set("io.ktor.server.netty.EngineMain")
 }
-
-kotlin {
-    jvmToolchain(11)
-}
-
-
