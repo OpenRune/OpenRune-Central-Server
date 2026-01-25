@@ -4,7 +4,7 @@ plugins {
     id("maven-publish")
 }
 
-val buildDirectory = System.getenv("HOSTING_DIRECTORY") ?: "D:\\openrune-hosting"
+val buildDirectory = System.getenv("HOSTING_DIRECTORY") ?: "D:\\OpenRune\\openrune-hosting"
 val buildNumber = "1.0.0"
 
 subprojects {
@@ -85,7 +85,7 @@ publishing {
 
             pom {
                 name.set("OpenRune - server")
-                description.set("Aggregate module including both the client api and implementation for game-server.")
+                description.set("Aggregate module including the api and server implementation.")
                 url.set("https://github.com/OpenRune/openrune-aggregates")
 
                 withXml {
@@ -97,12 +97,30 @@ publishing {
             }
         }
 
+        create<MavenPublication>("all") {
+            artifactId = "all"
+
+            pom {
+                name.set("OpenRune - all")
+                description.set("Aggregate module including the api and server and client implementation.")
+                url.set("https://github.com/OpenRune/openrune-aggregates")
+
+                withXml {
+                    asNode().appendNode("dependencies").apply {
+                        addDependency("dev.or2.central", "api", apiVersion)
+                        addDependency("dev.or2.central", "api-server", apiServerVersion)
+                        addDependency("dev.or2.central", "api-client", apiClientVersion)
+                    }
+                }
+            }
+        }
+
         create<MavenPublication>("client") {
             artifactId = "client"
 
             pom {
                 name.set("OpenRune - client")
-                description.set("Aggregate module including both the api and client implementation for game-server.")
+                description.set("Aggregate module including the api and client implementation.")
                 url.set("https://github.com/OpenRune/openrune-aggregates")
 
                 withXml {

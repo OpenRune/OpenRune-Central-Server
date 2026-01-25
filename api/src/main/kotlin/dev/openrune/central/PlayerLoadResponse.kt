@@ -1,0 +1,3 @@
+package dev.openrune.central
+
+enum class PlayerLoadResponse { NEW_ACCOUNT, LOAD, ALREADY_ONLINE, INVALID_CREDENTIALS, INVALID_RECONNECTION, MALFORMED, OFFLINE_SERVER }

@@ -1,6 +1,6 @@
 ## OpenRune Central Server
 
-Central HTTP service used by world servers (private API) and clients/tools (public API).
+Central HTTP service used by clients/tools (public API).
 
 Default bind: `0.0.0.0:8080` (see `central/src/main/resources/application.conf`).
 
@@ -62,39 +62,11 @@ Other public endpoints:
 | GET | `/worldlist.ws` | Worldlist binary payload |
 | GET | `/java_local.ws` | Client bootstrap `java_local.ws` |
 
-### Private HTTP API (world servers)
-
-Base path: `/api/private`
-
-Auth headers (required on every private request):
-
-- `X-World-Id`
-- `X-Timestamp` (unix ms)
-- `X-Signature` (Ed25519 signature)
-
-Signature payload format:
-
-`{timestamp}\n{worldId}\n{method}\n{path}\n{body}`
-
-Endpoints:
-
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/private/test` | Verifies signature end-to-end |
-| POST | `/api/private/login/request` | Login decision + login details |
-| POST | `/api/private/accounts/link` | Link a new account name to an existing login |
-| POST | `/api/private/logout` | Persist logout state and mark offline |
-| POST | `/api/private/player/save` | Persist a player save JSON blob |
-| POST | `/api/private/player/load` | Load a player save JSON blob |
-| POST | `/api/private/store/{bucket}/{id}` | Generic JSON upsert into storage |
-| POST | `/api/private/append/{bucket}` | Append JSON to a bucket log stream |
-| POST | `/api/private/logs` | Append a typed `Loggable` event |
-
 ### Key generation
 
 Run `dev.openrune.central.tools.KeyGenKt` to generate an Ed25519 keypair:
 
 - Central stores the public key in `config.yml` under `worlds[].authPublicKey`
-- World server stores the private key (`authPrivateKey`) and signs private API requests
+- World server stores the private key (`authPrivateKey`) and uses it for authentication
 
 

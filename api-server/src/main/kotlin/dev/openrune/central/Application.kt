@@ -6,17 +6,23 @@ import io.ktor.server.plugins.callloging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
+import io.ktor.server.application.ApplicationStopping
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
-import dev.openrune.central.api.registerPrivateApi
 import dev.openrune.central.api.registerPublicApi
 import dev.openrune.central.config.AppConfig
 import dev.openrune.central.config.ConfigLoader
 import dev.openrune.central.JavaWsManager
 import dev.openrune.central.logging.RuntimeLogging
 import dev.openrune.central.metrics.PlayersOnlineHistoryRecorder
+import dev.openrune.central.packet.CentralPacketServer
+
+import dev.openrune.central.packet.PacketDispatcher
+import dev.openrune.central.packet.routing.PacketRouter
 import dev.openrune.central.storage.StorageFactory
+
 import org.slf4j.event.Level
+
 
 fun Application.module() {
     val appConfig = ConfigLoader.loadOrThrow()
@@ -68,6 +74,18 @@ internal fun Application.module(appConfig: AppConfig, generateJavaLocal: Boolean
     }
 
     registerPublicApi()
-    registerPrivateApi()
+
+    val packetPort = System.getenv("CENTRAL_PACKET_PORT")?.toIntOrNull() ?: 43595
+    val packetHandle = CentralPacketServer.start(host = "0.0.0.0", port = packetPort)
+
+    // Default packet handlers live on the codecs (e.g., LoginRequestCodec.handle(...)).
+    val router = PacketRouter()
+
+    val dispatcher = PacketDispatcher(router).also { it.start() }
+
+    environment.monitor.subscribe(ApplicationStopping) {
+        dispatcher.stop()
+        packetHandle.close()
+    }
 }
 

@@ -2,10 +2,11 @@ package dev.openrune.central.details
 
 import at.favre.lib.crypto.bcrypt.BCrypt
 import dev.openrune.central.AppState
-import dev.openrune.central.api.LoginDetailsDto
-import dev.openrune.central.api.PlayerUID
-import dev.openrune.central.api.PlayerDetailsDto
-import dev.openrune.central.api.PlayerLoadResponse
+import dev.openrune.central.PlayerLoadResponse
+import dev.openrune.central.PlayerUID
+import dev.openrune.central.packet.model.LoginDetailsDto
+import dev.openrune.central.packet.model.LoginResponseOutgoing
+import dev.openrune.central.packet.model.PlayerDetailsDto
 import dev.openrune.central.storage.JsonBucket
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -13,6 +14,8 @@ import kotlinx.serialization.json.Json
 
 object DetailsStore {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    private fun normalizeName(raw: String): String = raw.trim().lowercase()
 
     /**
      * Deterministic 64-bit id derived from a stable string (FNV-1a 64).
@@ -36,7 +39,7 @@ object DetailsStore {
      * This is safe to call early in request handling (e.g., to reject ALREADY_ONLINE).
      */
     fun stableUidForLoginUsername(usernameRaw: String): Long {
-        val loginUsernameLower = usernameRaw.trim().lowercase()
+        val loginUsernameLower = normalizeName(usernameRaw)
         if (loginUsernameLower.isEmpty()) return 0L
         return stableUidFromLoginUsername(loginUsernameLower)
     }
@@ -92,18 +95,15 @@ object DetailsStore {
         val loginUsername: String
     )
 
-    data class DetailsResult(
-        val result: PlayerLoadResponse,
-        val login: LoginDetailsDto? = null
-    )
+
 
     suspend fun loadOrCreate(
         usernameRaw: String,
         password: String,
         xteas: List<Int>
-    ): DetailsResult {
-        val nameLower = usernameRaw.trim().lowercase()
-        if (nameLower.isEmpty()) return DetailsResult(PlayerLoadResponse.MALFORMED)
+    ): LoginResponseOutgoing {
+        val nameLower = normalizeName(usernameRaw)
+        if (nameLower.isEmpty()) return LoginResponseOutgoing(PlayerLoadResponse.MALFORMED)
 
         // Login is ONLY allowed via the primary login username (the group key).
         // However, when creating a new login, we must ensure the name doesn't already exist as
@@ -111,40 +111,40 @@ object DetailsStore {
         val existingOwner = resolveOwnerLoginUsername(nameLower)
         if (existingOwner != null && existingOwner != nameLower) {
             // Username exists as a sub-account under another login.
-            return DetailsResult(PlayerLoadResponse.INVALID_CREDENTIALS)
+            return LoginResponseOutgoing(PlayerLoadResponse.INVALID_CREDENTIALS)
         }
 
         val groupJson = AppState.storage.get(JsonBucket.LOGIN_DETAILS, nameLower)
         if (groupJson == null) {
-            if (password.isEmpty()) return DetailsResult(PlayerLoadResponse.MALFORMED)
+            if (password.isEmpty()) return LoginResponseOutgoing(PlayerLoadResponse.MALFORMED)
             val created = createGroup(
                 loginUsernameLower = nameLower,
                 password = password,
                 firstAccountLower = nameLower,
-                firstAccountRaw = usernameRaw,
                 xteas = xteas
             )
             val now = System.currentTimeMillis()
             val updated = created.copy(lastLogin = now)
             AppState.storage.upsert(JsonBucket.LOGIN_DETAILS, nameLower, json.encodeToString(StoredAccountGroupRecord.serializer(), updated))
-            return DetailsResult(
+            val uid = if (updated.uid == 0L) stableUidFromLoginUsername(nameLower) else updated.uid
+            return LoginResponseOutgoing(
                 PlayerLoadResponse.NEW_ACCOUNT,
                 login = LoginDetailsDto(
                     loginUsername = nameLower,
                     createdAt = created.createdAt,
                     lastLogin = now,
-                    linkedAccounts = created.accounts.toPlayerDetailsList(PlayerUID(if (created.uid == 0L) stableUidFromLoginUsername(nameLower) else created.uid))
+                    linkedAccounts = updated.accounts.toPlayerDetailsList(PlayerUID(uid))
                 )
             )
         }
 
-        val group = loadGroup(nameLower) ?: return DetailsResult(PlayerLoadResponse.MALFORMED)
-        val accountKey = nameLower
-        val account = group.accounts[accountKey]
+        val group = loadGroup(nameLower) ?: return LoginResponseOutgoing(PlayerLoadResponse.MALFORMED)
+        val account = group.accounts[nameLower]
 
         return try {
             // Decide auth mode: password if provided, else reconnection via xteas
-            val authResult = if (password.isNotEmpty()) {
+            val authResult =
+                if (password.isNotEmpty()) {
                     val ok = BCrypt.verifyer().verify(password.toCharArray(), group.passwordHash).verified
                     if (!ok) PlayerLoadResponse.INVALID_CREDENTIALS else PlayerLoadResponse.LOAD
                 } else {
@@ -152,35 +152,34 @@ object DetailsStore {
                     if (prev != xteas) PlayerLoadResponse.INVALID_RECONNECTION else PlayerLoadResponse.LOAD
                 }
 
-            val linked = group.accounts.keys.sorted()
-
-            if (authResult != PlayerLoadResponse.LOAD) return DetailsResult(authResult)
+            if (authResult != PlayerLoadResponse.LOAD) return LoginResponseOutgoing(authResult)
 
             // Update previousXteas on the account being logged in as
             val updatedAccounts =
                 if (account == null) group.accounts
-                else group.accounts + (accountKey to account.copy(previousXteas = xteas))
+                else group.accounts + (nameLower to account.copy(previousXteas = xteas))
 
             val updated = group.copy(accounts = updatedAccounts, lastLogin = System.currentTimeMillis())
             AppState.storage.upsert(JsonBucket.LOGIN_DETAILS, nameLower, json.encodeToString(StoredAccountGroupRecord.serializer(), updated))
+            val uid = if (updated.uid == 0L) stableUidFromLoginUsername(nameLower) else updated.uid
 
-            DetailsResult(
+            LoginResponseOutgoing(
                 PlayerLoadResponse.LOAD,
                 login = LoginDetailsDto(
                     loginUsername = nameLower,
                     createdAt = updated.createdAt,
                     lastLogin = updated.lastLogin,
-                    linkedAccounts = updated.accounts.toPlayerDetailsList(PlayerUID(if (updated.uid == 0L) stableUidFromLoginUsername(nameLower) else updated.uid))
+                    linkedAccounts = updated.accounts.toPlayerDetailsList(PlayerUID(uid))
                 )
             )
         } catch (_: Throwable) {
-            DetailsResult(PlayerLoadResponse.MALFORMED)
+            LoginResponseOutgoing(PlayerLoadResponse.MALFORMED)
         }
     }
 
     suspend fun linkAccount(usernameRaw: String, password: String, newAccountRaw: String, xteas: List<Int> = emptyList()): Pair<Boolean, List<String>> {
-        val nameLower = usernameRaw.trim().lowercase()
-        val newLower = newAccountRaw.trim().lowercase()
+        val nameLower = normalizeName(usernameRaw)
+        val newLower = normalizeName(newAccountRaw)
         if (nameLower.isEmpty() || newLower.isEmpty()) return false to emptyList()
 
         // Linking is only allowed when authenticating as the primary login username.
@@ -216,7 +215,7 @@ object DetailsStore {
      * - accountRaw: account username (may be linked sub-account)
      */
     suspend fun saveLogout(uid: Long, accountRaw: String, previousXteas: List<Int>): Boolean {
-        val accountLower = accountRaw.trim().lowercase()
+        val accountLower = normalizeName(accountRaw)
         if (uid == 0L) return false
 
         val owner =
@@ -246,7 +245,7 @@ object DetailsStore {
      * Key format: "{uid}:{accountLower}"
      */
     suspend fun playerSaveKey(uid: Long, accountRaw: String): String? {
-        val accountLower = accountRaw.trim().lowercase()
+        val accountLower = normalizeName(accountRaw)
         if (uid == 0L) return null
 
         val owner =
@@ -323,7 +322,6 @@ object DetailsStore {
         loginUsernameLower: String,
         password: String,
         firstAccountLower: String,
-        firstAccountRaw: String,
         xteas: List<Int>
     ): StoredAccountGroupRecord {
         val now = System.currentTimeMillis()

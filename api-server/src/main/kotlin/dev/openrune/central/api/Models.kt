@@ -20,34 +20,6 @@ data class ErrorResponseDto(
 )
 
 @Serializable
-data class PrivateAuthTestResponseDto(
-    @SerialName("ok")
-    val ok: Boolean,
-    @SerialName("worldId")
-    val worldId: Int,
-    @SerialName("bodyLength")
-    val bodyLength: Int
-)
-
-@Serializable
-data class StorageWriteResponseDto(
-    @SerialName("ok")
-    val ok: Boolean,
-    @SerialName("bucket")
-    val bucket: String,
-    @SerialName("id")
-    val id: String? = null
-)
-
-@Serializable
-data class SendStatusDto(
-    @SerialName("result")
-    val result: String,
-    @SerialName("error")
-    val error: String? = null
-)
-
-@Serializable
 data class WorldInfoDto(
     @SerialName("id")
     val id: Int,
