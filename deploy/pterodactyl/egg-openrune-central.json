@@ -1,0 +1,51 @@
+{
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "exported_at": "2026-05-12T00:00:00+00:00",
+  "name": "OpenRune Central Server",
+  "author": "openrune",
+  "description": "OpenRune Central",
+  "features": ["java_version"],
+  "docker_images": {
+    "Java 21": "ghcr.io/pterodactyl/yolks:java_21"
+  },
+  "file_denylist": [],
+  "startup": "OPENRUNE_HTTP_PORT={{server.build.default.port}} OPENRUNE_CONFIG=central-config.properties java -Xms128M -XX:MaxRAMPercentage=95.0 {{JVM_EXTRA_FLAGS}} -Duser.dir=/home/container -jar {{SERVER_JARFILE}}",
+  "config": {
+    "files": "{}",
+    "startup": "{\"done\":[\"OpenRune Central is online\",\"regex:Application started\"]}",
+    "logs": "{}",
+    "stop": ""
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/ash\nset -eu\ncd /mnt/server || exit 1\nJAR=\"{{SERVER_JARFILE}}\"\nif [ ! -f \"$JAR\" ]; then\n  echo \"ERROR: $JAR not found. Build the shadow JAR (./gradlew :openrune-central:shadowJar), then upload it here (SFTP / File Manager) as $JAR and run Reinstall or Start.\"\n  exit 1\nfi\necho \"Found $JAR — you supply the JAR; install check complete.\"\n",
+      "container": "ghcr.io/pterodactyl/installers:alpine",
+      "entrypoint": "ash"
+    }
+  },
+  "variables": [
+    {
+      "name": "Server JAR file",
+      "description": "Filename of the uploaded shadow JAR in the server root (default matches Gradle output openrune-central-server.jar).",
+      "env_variable": "SERVER_JARFILE",
+      "default_value": "openrune-central-server.jar",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:191",
+      "field_type": "text"
+    },
+    {
+      "name": "Extra JVM flags",
+      "description": "Optional extra JVM arguments (e.g. -Dlogback.configurationFile=/home/container/logback.xml).",
+      "env_variable": "JVM_EXTRA_FLAGS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "string|max:512",
+      "field_type": "text"
+    }
+  ]
+}

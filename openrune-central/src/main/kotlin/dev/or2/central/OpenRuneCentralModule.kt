@@ -3,24 +3,25 @@ package dev.or2.central
 import com.zaxxer.hikari.HikariDataSource
 import dev.or2.central.account.AccountRepository
 import dev.or2.central.account.PasswordHasher
+import dev.or2.central.analytics.OnlineSampleRepository
+import dev.or2.central.analytics.OnlineSampler
 import dev.or2.central.util.config.CentralRuntimeConfig
 import dev.or2.central.util.config.createCentralDataSource
 import dev.or2.central.http.CentralHttpContext
 import dev.or2.central.http.centralHttpRoutes
-import dev.or2.central.worldserver.logging.LoginEventRepository
-import dev.or2.central.worldserver.session.StaleSessionSweeper
-import dev.or2.central.account.punishment.PunishmentPgListenerService
-import dev.or2.central.account.punishment.PunishmentRepository
-import dev.or2.central.worldserver.session.SessionRepository
+import dev.or2.central.server.logging.CentralActivityLogRepository
+import dev.or2.central.account.PunishmentService
 import dev.or2.central.http.world.WorldKeyVerifier
 import dev.or2.central.http.world.WorldListCache
 import dev.or2.central.http.world.WorldLoginGateRepository
 import dev.or2.central.http.world.WorldRepository
-import dev.or2.central.http.world.ops.WorldOpsRepository
-import dev.or2.central.worldserver.net.WorldServerTcpServer
-import dev.or2.central.worldserver.net.push.WorldServerPushChannelRegistry
-import dev.or2.central.worldserver.session.WorldServerSessionService
-import dev.or2.central.worldserver.telemetry.MicrometerWorldServerTelemetry
+import dev.or2.central.util.config.WorldServerTcpConfig
+import dev.or2.central.server.net.WorldServerTcpServer
+import dev.or2.central.server.net.push.WorldServerPushChannelRegistry
+import dev.or2.central.server.session.WorldServerSessionService
+import dev.or2.central.server.session.WorldSessionReaper
+import dev.or2.central.server.session.WorldSessionRepository
+import dev.or2.central.server.telemetry.WorldServerTelemetry
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
@@ -28,19 +29,11 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationStarted
 import io.ktor.server.application.ApplicationStopped
 import io.ktor.server.application.install
-import io.ktor.server.metrics.micrometer.MicrometerMetrics
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.routing
-import io.micrometer.core.instrument.binder.jvm.ClassLoaderMetrics
-import io.micrometer.core.instrument.binder.jvm.JvmGcMetrics
-import io.micrometer.core.instrument.binder.jvm.JvmMemoryMetrics
-import io.micrometer.core.instrument.binder.system.ProcessorMetrics
-import io.micrometer.prometheusmetrics.PrometheusConfig
-import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
 import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ThreadPoolExecutor
@@ -59,21 +52,15 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
     val worldListCache = WorldListCache(worldRepository)
     val accountRepository = AccountRepository(dataSource)
     val passwordHasher = PasswordHasher()
-    val sessionRepository = SessionRepository(dataSource)
-    val loginEventRepository = LoginEventRepository(dataSource)
-    val punishmentRepository = PunishmentRepository(dataSource)
-    val worldOpsRepository = WorldOpsRepository(dataSource)
+    val sessionRepository = WorldSessionRepository(dataSource)
+    val activityLogRepository = CentralActivityLogRepository(dataSource)
+    val punishmentService = PunishmentService(dataSource)
+    val worldOperationRepository = WorldOperationRepository(dataSource)
 
     val worldKeyVerifier = WorldKeyVerifier()
     val worldLoginGateRepository = WorldLoginGateRepository(dataSource)
 
-    val prometheus = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
-    ClassLoaderMetrics().bindTo(prometheus)
-    JvmMemoryMetrics().bindTo(prometheus)
-    JvmGcMetrics().bindTo(prometheus)
-    ProcessorMetrics().bindTo(prometheus)
-
-    val worldServerTelemetry = MicrometerWorldServerTelemetry(prometheus)
+    val worldServerTelemetry: WorldServerTelemetry = WorldServerTelemetry.None
     val worldServerPushChannelRegistry = WorldServerPushChannelRegistry()
 
     val worldServerSessionService =
@@ -85,72 +72,94 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
             passwordHasher = passwordHasher,
             sessionRepository = sessionRepository,
             worldListCache = worldListCache,
-            punishmentRepository = punishmentRepository,
-            worldOpsRepository = worldOpsRepository,
+            punishmentService = punishmentService,
+            worldOperationRepository = worldOperationRepository,
             worldLoginGateRepository = worldLoginGateRepository,
             telemetry = worldServerTelemetry,
         )
 
     val worldsLinkPort = centralConfig.worldsLinkPort
-    val worldServerTcpExecutor: ExecutorService? =
-        if (worldsLinkPort != null) {
-            val threads = centralConfig.worldsLinkHandlerThreads
-            val queueSize = centralConfig.worldsLinkHandlerQueueSize
+
+    val worldServerTcpExecutor =
+        worldsLinkPort?.let {
             ThreadPoolExecutor(
-                threads,
-                threads,
+                centralConfig.worldsLinkHandlerThreads,
+                centralConfig.worldsLinkHandlerThreads,
                 60L,
                 TimeUnit.SECONDS,
-                ArrayBlockingQueue(queueSize),
-                { runnable -> Thread(runnable, "openrune-worldserver").apply { isDaemon = true } },
+                ArrayBlockingQueue(centralConfig.worldsLinkHandlerQueueSize),
+                { Thread(it, "openrune-worldserver").apply { isDaemon = true } },
                 ThreadPoolExecutor.CallerRunsPolicy(),
             )
-        } else {
-            null
-        }
-    val worldServerTcpServer: WorldServerTcpServer? =
-        if (worldsLinkPort != null && worldServerTcpExecutor != null) {
-            WorldServerTcpServer(
-                port = worldsLinkPort,
-                sessionService = worldServerSessionService,
-                executor = worldServerTcpExecutor,
-                pushChannelRegistry = worldServerPushChannelRegistry,
-                soBacklog = centralConfig.worldsLinkSoBacklog,
-                readTimeoutSeconds = centralConfig.worldsLinkReadTimeoutSeconds,
-                maxConnectionsPerIp = centralConfig.worldsLinkMaxConnectionsPerIp,
-                maxConnectionsTotal = centralConfig.worldsLinkMaxConnectionsTotal,
-                maxFramesPerSecond = centralConfig.worldsLinkMaxFramesPerSecond.toDouble(),
-                maxFrameBurst = centralConfig.worldsLinkMaxFrameBurst.toDouble(),
-            )
-        } else {
-            null
         }
 
-    val sessionsTtlMillis = centralConfig.sessionsTtlMillis
-    val scheduler: ScheduledExecutorService =
-        Executors.newSingleThreadScheduledExecutor { runnable ->
-            Thread(runnable, "openrune-central-scheduler").apply { isDaemon = true }
+    val worldServerTcpServer =
+        worldsLinkPort?.let {
+            WorldServerTcpServer(
+                port = it,
+                sessionService = worldServerSessionService,
+                executor = worldServerTcpExecutor!!,
+                pushChannelRegistry = worldServerPushChannelRegistry,
+                worldOperationRepository = worldOperationRepository,
+                config = WorldServerTcpConfig(
+                    soBacklog = centralConfig.worldsLinkSoBacklog,
+                    readTimeoutSeconds = centralConfig.worldsLinkReadTimeoutSeconds,
+                    maxConnectionsPerIp = centralConfig.worldsLinkMaxConnectionsPerIp,
+                    maxConnectionsTotal = centralConfig.worldsLinkMaxConnectionsTotal,
+                    maxFramesPerSecond = centralConfig.worldsLinkMaxFramesPerSecond.toDouble(),
+                    maxFrameBurst = centralConfig.worldsLinkMaxFrameBurst.toDouble(),
+                )
+            )
         }
+
+    val scheduler: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor {
+            Thread(it, "openrune-central-scheduler").apply { isDaemon = true }
+        }
+
     val staleSessionSweeper =
-        StaleSessionSweeper(
+        WorldSessionReaper(
             sessionRepository = sessionRepository,
             worldListCache = worldListCache,
-            ttlMillis = sessionsTtlMillis,
+            ttlMillis = centralConfig.sessionsTtlMillis,
             scheduler = scheduler,
         )
 
     val punishmentPgListener =
-        PunishmentPgListenerService(
+        PostgresEventListenerService(
             dataSource = dataSource,
             worldServerPushChannelRegistry = worldServerPushChannelRegistry,
             sessionRepository = sessionRepository,
             worldListCache = worldListCache,
         )
 
+    val onlineSampleRepository = OnlineSampleRepository(dataSource)
+    val onlineSampler = OnlineSampler(sessionRepository, onlineSampleRepository)
+
+
     monitor.subscribe(ApplicationStarted) {
         staleSessionSweeper.start()
         worldServerTcpServer?.start()
         punishmentPgListener.start()
+
+        val sampleEverySec =
+            centralConfig.onlineSampleIntervalSeconds
+                .toLong()
+                .coerceAtLeast(30L)
+
+        scheduler.scheduleAtFixedRate(
+            {
+                try {
+                    onlineSampler.sampleNow()
+                } catch (e: Exception) {
+                    environment.log.debug("online sample failed: {}", e.message)
+                }
+            },
+            sampleEverySec,
+            sampleEverySec,
+            TimeUnit.SECONDS,
+        )
+
         scheduler.scheduleAtFixedRate(
             {
                 try {
@@ -163,7 +172,10 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
             45L,
             TimeUnit.SECONDS,
         )
+
+        environment.log.info("OpenRune Central is online")
     }
+
     monitor.subscribe(ApplicationStopped) {
         punishmentPgListener.stop()
         worldServerTcpServer?.stop()
@@ -179,21 +191,20 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
     install(StatusPages) {
         exception<Throwable> { call, cause ->
             call.application.environment.log.error("Unhandled error", cause)
-            call.respondText("Internal Server Error", ContentType.Text.Plain, status = HttpStatusCode.InternalServerError)
+            call.respondText(
+                "Internal Server Error",
+                ContentType.Text.Plain,
+                status = HttpStatusCode.InternalServerError,
+            )
         }
-    }
-
-    install(MicrometerMetrics) {
-        registry = prometheus
     }
 
     routing {
         centralHttpRoutes(
             CentralHttpContext(
                 sessionRepository = sessionRepository,
-                loginEventRepository = loginEventRepository,
+                activityLogRepository = activityLogRepository,
                 worldListCache = worldListCache,
-                prometheus = prometheus,
             ),
         )
     }

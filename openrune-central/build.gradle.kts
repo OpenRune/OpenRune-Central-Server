@@ -35,13 +35,10 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json")
     implementation("io.ktor:ktor-server-status-pages")
     implementation("io.ktor:ktor-server-config-yaml")
-    implementation("io.ktor:ktor-server-metrics-micrometer")
 
     implementation("com.zaxxer:HikariCP:6.2.1")
-    implementation("org.postgresql:postgresql:42.7.5")
+    implementation("org.postgresql:postgresql:42.7.7")
     implementation("io.zonky.test:embedded-postgres:2.2.2")
-
-    implementation("io.micrometer:micrometer-registry-prometheus:1.14.5")
 
     implementation("ch.qos.logback:logback-classic:1.5.16")
 

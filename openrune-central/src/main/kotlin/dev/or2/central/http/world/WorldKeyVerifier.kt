@@ -1,7 +1,7 @@
 package dev.or2.central.http.world
 
-import dev.or2.central.util.crypto.constantTimeEquals
-import dev.or2.central.util.crypto.sha256
+import dev.or2.central.util.constantTimeEquals
+import dev.or2.central.util.sha256
 
 class WorldKeyVerifier {
     fun verify(row: WorldAuthRow, providedKeyUtf8: ByteArray): Boolean {

@@ -1,3 +1,3 @@
 SELECT log_uuid
-FROM punishment_attached_logs
-WHERE punishment_id = ?
+FROM activity_log_attachments
+WHERE subject_type = 'punishment' AND subject_id = ?

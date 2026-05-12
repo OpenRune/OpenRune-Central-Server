@@ -26,12 +26,6 @@ SELECT
 FROM accounts a
 JOIN account_characters c ON c.account_id = a.id
 WHERE c.realm_id = ?
-    AND (
-        a.login_username = ?
-        OR EXISTS (
-            SELECT 1 FROM account_login_aliases al
-            WHERE al.account_id = a.id AND al.login_username = ?
-        )
-    )
+    AND LOWER(a.login_username) = ?
 ORDER BY c.id ASC
 LIMIT 1

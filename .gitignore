@@ -7,6 +7,8 @@ central-config.properties
 *.db-wal
 *.db-shm
 !gradle/wrapper/gradle-wrapper.jar
+# Docker build context (copy shadow JAR here before `docker build`)
+/openrune-central-server.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
 .kotlin

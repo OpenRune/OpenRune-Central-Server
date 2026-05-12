@@ -1,32 +1,42 @@
 package dev.or2.sql
 
-import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 
-/** Classpath `sql/…` text; [text] with pairs replaces markers like `__IN__`. */
-public object OpenRuneSql {
+/**
+ * Loads SQL files from classpath under `sql/`.
+ * Supports simple string replacement using marker → value pairs.
+ */
+object OpenRuneSql {
+
     private const val PREFIX = "sql/"
     private val cache = ConcurrentHashMap<String, String>()
 
-    public fun text(relativePath: String): String = cache.getOrPut(relativePath) { readRaw(relativePath) }
+    fun text(path: String): String =
+        cache.computeIfAbsent(normalize(path)) { load(it) }
 
-    public fun text(
-        relativePath: String,
-        vararg replacements: Pair<String, String>,
+    fun text(
+        path: String,
+        vararg replacements: Pair<String, String>
     ): String {
-        var s = text(relativePath)
-        for ((marker, value) in replacements) {
-            s = s.replace(marker, value)
+        val base = text(path)
+
+        if (replacements.isEmpty()) return base
+
+        return replacements.fold(base) { acc, (key, value) ->
+            acc.replace(key, value)
         }
-        return s
     }
 
-    private fun readRaw(relativePath: String): String {
-        val normalized = relativePath.trim().removePrefix("/")
-        val full = PREFIX + normalized
-        val stream: InputStream =
-            OpenRuneSql::class.java.classLoader.getResourceAsStream(full)
-                ?: error("Missing SQL resource on classpath: $full")
+    private fun load(normalizedPath: String): String {
+        val fullPath = PREFIX + normalizedPath
+
+        val stream = OpenRuneSql::class.java.classLoader
+            .getResourceAsStream(fullPath)
+            ?: error("Missing SQL resource on classpath: $fullPath")
+
         return stream.bufferedReader(Charsets.UTF_8).use { it.readText().trim() }
     }
+
+    private fun normalize(path: String): String =
+        path.trim().removePrefix("/")
 }

@@ -31,14 +31,6 @@ CREATE INDEX IF NOT EXISTS idx_punishments_character ON punishments (character_i
 CREATE INDEX IF NOT EXISTS idx_punishments_status_issued ON punishments (status, issued_at DESC);
 CREATE INDEX IF NOT EXISTS idx_punishments_expires ON punishments (expires_at) WHERE expires_at IS NOT NULL;
 
-CREATE TABLE IF NOT EXISTS punishment_attached_logs (
-    punishment_id BIGINT NOT NULL REFERENCES punishments (id) ON DELETE CASCADE,
-    log_uuid UUID NOT NULL,
-    PRIMARY KEY (punishment_id, log_uuid)
-);
-
-CREATE INDEX IF NOT EXISTS idx_punishment_attached_logs_uuid ON punishment_attached_logs (log_uuid);
-
 CREATE OR REPLACE FUNCTION punishments_notify_enforce_ban_fn() RETURNS trigger AS $$
 DECLARE
     acc_id bigint;

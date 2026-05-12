@@ -50,6 +50,7 @@ class WorldRepository(
                         loginGateMinLevelEnabled = rs.getInt("login_gate_min_level_enabled") != 0,
                         loginGateRightsEnabled = rs.getInt("login_gate_rights_enabled") != 0,
                         loginGateWhitelistEnabled = rs.getInt("login_gate_whitelist_enabled") != 0,
+                        realmDevMode = rs.getBoolean("realm_dev_mode"),
                     )
                 }
             }

@@ -91,13 +91,6 @@ FROM accounts
 WHERE id = $1
 `.trim();
 
-export const ACCOUNT_ALIASES = `
-SELECT login_username
-FROM account_login_aliases
-WHERE account_id = $1
-ORDER BY id ASC
-`.trim();
-
 export const ACCOUNT_SESSIONS = `
 SELECT id, account_id, world_id, created_at, last_seen_at
 FROM sessions

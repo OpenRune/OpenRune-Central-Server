@@ -11,4 +11,6 @@ data class WorldAuthRow(
     val loginGateMinLevelEnabled: Boolean,
     val loginGateRightsEnabled: Boolean,
     val loginGateWhitelistEnabled: Boolean,
+    /** Realm `dev_mode`: when true, LOGIN_OK always sends `modlevel.owner` (overrides account rights on wire). */
+    val realmDevMode: Boolean,
 )

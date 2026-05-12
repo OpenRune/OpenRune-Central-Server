@@ -12,135 +12,130 @@ import javax.sql.DataSource
 private const val SCHEMA_RESOURCE_DIR = "db/schema"
 
 object CentralSchemaBootstrap {
+
     fun apply(dataSource: DataSource) {
         val cl = Thread.currentThread().contextClassLoader
-        val schemaFragments = discoverSchemaSqlPaths(cl)
-        require(schemaFragments.isNotEmpty()) {
-            "No *.sql files under $SCHEMA_RESOURCE_DIR/ on classpath (openrune-central-common)"
+        val schemaFiles = discoverSchemaSqlPaths(cl)
+
+        require(schemaFiles.isNotEmpty()) {
+            "No *.sql files under $SCHEMA_RESOURCE_DIR/"
         }
+
         dataSource.connection.use { conn ->
             conn.autoCommit = true
+
             conn.createStatement().use { st ->
-                for (path in schemaFragments) {
-                    val stream =
-                        cl.getResourceAsStream(path)
-                            ?: error("Missing classpath resource $path (openrune-central-common)")
-                    val text =
-                        stream.use { ins ->
-                            BufferedReader(InputStreamReader(ins, StandardCharsets.UTF_8)).readText()
-                        }
-                    for (sql in splitPostgresStatements(text)) {
-                        st.execute(sql)
-                    }
+                for (path in schemaFiles) {
+                    val text = cl.getResourceAsStream(path)?.use { ins ->
+                        BufferedReader(InputStreamReader(ins, StandardCharsets.UTF_8)).readText()
+                    } ?: error("Missing resource: $path")
+
+                    splitPostgresStatements(text).forEach { st.execute(it) }
                 }
             }
         }
     }
 }
 
-/** Every `*.sql` directly under [SCHEMA_RESOURCE_DIR], sorted by filename (use numeric prefixes for order). */
 private fun discoverSchemaSqlPaths(classLoader: ClassLoader): List<String> {
     val base =
         classLoader.getResource("$SCHEMA_RESOURCE_DIR/")
             ?: classLoader.getResource(SCHEMA_RESOURCE_DIR)
-            ?: error("Missing classpath resource $SCHEMA_RESOURCE_DIR/ (openrune-central-common)")
+            ?: error("Missing schema directory: $SCHEMA_RESOURCE_DIR")
+
     val prefix = "$SCHEMA_RESOURCE_DIR/"
+
     return when (base.protocol) {
+
         "file" -> {
             val dir = Paths.get(base.toURI())
+
             Files.list(dir).use { stream ->
                 stream
                     .filter {
                         Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) &&
-                            it.fileName.toString().endsWith(".sql", ignoreCase = true)
+                                it.fileName.toString().endsWith(".sql", ignoreCase = true)
                     }
-                    .map { "${prefix}${it.fileName}" }
+                    .map { prefix + it.fileName.toString() }
                     .sorted()
                     .toList()
             }
         }
+
         "jar" -> {
             val conn = base.openConnection() as JarURLConnection
             conn.useCaches = false
+
             val jar = conn.jarFile
             val prefixNorm = prefix.replace('\\', '/')
+
             jar.entries().asSequence()
                 .map { it.name }
                 .filter { name ->
                     name.startsWith(prefixNorm) &&
-                        name.endsWith(".sql", ignoreCase = true) &&
-                        name.indexOf('/', prefixNorm.length) < 0
+                            name.endsWith(".sql", ignoreCase = true) &&
+                            name.indexOf('/', prefixNorm.length) < 0
                 }
                 .sorted()
                 .toList()
         }
-        else -> error("Cannot list schema fragments under ${base.protocol}: $base")
+
+        else -> error("Unsupported protocol: ${base.protocol}")
     }
 }
 
-// Splits on ';' outside dollar-quoted bodies ($$ / $tag$) so PL/pgSQL survives.
 internal fun splitPostgresStatements(raw: String): List<String> {
-    val statements = ArrayList<String>()
+    val statements = mutableListOf<String>()
     val sb = StringBuilder()
+
+    var inDollarQuote = false
+    var dollarTag = ""
     var i = 0
+
+    fun flush() {
+        val stmt = sb.toString()
+            .replace("--.*".toRegex(), "") // single-line comments
+            .trim()
+
+        if (stmt.isNotEmpty()) {
+            statements.add(stmt)
+        }
+        sb.clear()
+    }
+
     while (i < raw.length) {
         val c = raw[i]
-        if (c == ';' && !insideDollarQuote(raw, i)) {
-            val stmt =
-                sb.toString()
-                    .trim()
-                    .lines()
-                    .filterNot { it.trim().startsWith("--") }
-                    .joinToString("\n")
-                    .trim()
-            if (stmt.isNotEmpty()) {
-                statements.add(stmt)
+
+        if (c == '$') {
+            val end = raw.indexOf('$', i + 1)
+
+            if (end > i) {
+                val tag = raw.substring(i, end + 1)
+
+                if (!inDollarQuote) {
+                    inDollarQuote = true
+                    dollarTag = tag
+                } else if (tag == dollarTag) {
+                    inDollarQuote = false
+                    dollarTag = ""
+                }
+
+                sb.append(tag)
+                i = end + 1
+                continue
             }
-            sb.clear()
+        }
+
+        if (c == ';' && !inDollarQuote) {
+            flush()
             i++
             continue
         }
+
         sb.append(c)
         i++
     }
-    val tail =
-        sb.toString()
-            .trim()
-            .lines()
-            .filterNot { it.trim().startsWith("--") }
-            .joinToString("\n")
-            .trim()
-    if (tail.isNotEmpty()) {
-        statements.add(tail)
-    }
-    return statements
-}
 
-private fun insideDollarQuote(sql: String, index: Int): Boolean {
-    var pos = 0
-    var inQuote = false
-    var marker = ""
-    while (pos < index) {
-        if (sql[pos] != '$') {
-            pos++
-            continue
-        }
-        if (!inQuote) {
-            val endTag = sql.indexOf('$', pos + 1)
-            if (endTag < 0) {
-                return false
-            }
-            marker = sql.substring(pos, endTag + 1)
-            inQuote = true
-            pos = endTag + 1
-        } else {
-            if (sql.regionMatches(pos, marker, 0, marker.length)) {
-                inQuote = false
-                pos += marker.length
-            } else {
-                pos++
-            }
-        }
-    }
-    return inQuote
+    flush()
+    return statements
 }

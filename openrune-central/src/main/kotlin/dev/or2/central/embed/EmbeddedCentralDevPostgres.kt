@@ -2,40 +2,46 @@ package dev.or2.central.embed
 
 import dev.or2.central.util.config.CentralRuntimeConfig
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
+import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
-import org.slf4j.LoggerFactory
 
 internal object EmbeddedCentralDevPostgres {
+
     private val log = LoggerFactory.getLogger(EmbeddedCentralDevPostgres::class.java)
 
     @Volatile
     private var embedded: EmbeddedPostgres? = null
 
-    fun resolveRuntimeForEmbeddedServer(runtime: CentralRuntimeConfig): Pair<CentralRuntimeConfig, Boolean> {
+    fun resolveRuntimeForEmbeddedServer(
+        runtime: CentralRuntimeConfig,
+    ): Pair<CentralRuntimeConfig, Boolean> {
+
         if (runtime.jdbcUrl.isNotBlank()) {
             return runtime to false
         }
+
         synchronized(this) {
-            if (embedded == null) {
-                val dataDir = embeddedPgdataPath()
-                Files.createDirectories(dataDir)
-                embedded =
-                    EmbeddedPostgres.builder()
-                        .setDataDirectory(dataDir.toFile())
-                        .setCleanDataDirectory(false)
-                        .start()
-                log.info("Embedded PostgreSQL started (Central dev server, PGDATA: {})", dataDir)
+            embedded?.let {
+                val url = it.getJdbcUrl("postgres", "postgres")
+                return runtime.withEmbedded(url) to true
             }
-            val inst = embedded!!
-            val url = inst.getJdbcUrl("postgres", "postgres")
-            val effective =
-                runtime.copy(
-                    jdbcUrl = url,
-                    dbUser = "postgres",
-                    dbPassword = "",
-                )
-            return effective to true
+
+            val dataDir = embeddedPgdataPath().also {
+                Files.createDirectories(it)
+            }
+
+            val instance = EmbeddedPostgres.builder()
+                .setDataDirectory(dataDir.toFile())
+                .setCleanDataDirectory(false)
+                .start()
+
+            embedded = instance
+
+            log.info("Embedded PostgreSQL started (PGDATA={})", dataDir)
+
+            val url = instance.getJdbcUrl("postgres", "postgres")
+            return runtime.withEmbedded(url) to true
         }
     }
 
@@ -46,9 +52,20 @@ internal object EmbeddedCentralDevPostgres {
         }
     }
 
+    private fun CentralRuntimeConfig.withEmbedded(url: String) =
+        copy(
+            jdbcUrl = url,
+            dbUser = "postgres",
+            dbPassword = "",
+        )
+
     private fun embeddedPgdataPath(): Path {
-        val fromEnv = System.getenv("OPENRUNE_EMBEDDED_PGDATA")?.trim()?.takeIf { it.isNotEmpty() }
-        val pathStr = fromEnv ?: ".data/pgdata"
-        return Path.of(pathStr).toAbsolutePath().normalize()
+        val env = System.getenv("OPENRUNE_EMBEDDED_PGDATA")
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+
+        return Path.of(env ?: ".data/pgdata")
+            .toAbsolutePath()
+            .normalize()
     }
 }
