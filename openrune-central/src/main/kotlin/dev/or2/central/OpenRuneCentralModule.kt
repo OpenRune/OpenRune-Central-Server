@@ -1,7 +1,9 @@
 package dev.or2.central
 
 import com.zaxxer.hikari.HikariDataSource
+import dev.or2.central.account.AccountNameAuthPolicy
 import dev.or2.central.account.AccountRepository
+import dev.or2.central.account.BadWordIndex
 import dev.or2.central.account.PasswordHasher
 import dev.or2.central.analytics.OnlineSampleRepository
 import dev.or2.central.analytics.OnlineSampler
@@ -60,6 +62,9 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
     val worldKeyVerifier = WorldKeyVerifier()
     val worldLoginGateRepository = WorldLoginGateRepository(dataSource)
 
+    val badWordIndex = BadWordIndex(centralConfig)
+    AccountNameAuthPolicy.preloadWorldLinkDeceptiveFragments()
+
     val worldServerTelemetry: WorldServerTelemetry = WorldServerTelemetry.None
     val worldServerPushChannelRegistry = WorldServerPushChannelRegistry()
 
@@ -76,6 +81,7 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
             worldOperationRepository = worldOperationRepository,
             worldLoginGateRepository = worldLoginGateRepository,
             telemetry = worldServerTelemetry,
+            badWordRoots = { badWordIndex.roots() },
         )
 
     val worldsLinkPort = centralConfig.worldsLinkPort
@@ -139,8 +145,28 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
 
     monitor.subscribe(ApplicationStarted) {
         staleSessionSweeper.start()
+
+        try {
+            badWordIndex.refresh()
+        } catch (e: Exception) {
+            environment.log.warn("account-name bad words initial refresh failed: {}", e.message)
+        }
+
         worldServerTcpServer?.start()
         punishmentPgListener.start()
+        val badWordsEveryMin = centralConfig.badWordsRefreshMinutes.toLong().coerceAtLeast(5L)
+        scheduler.scheduleAtFixedRate(
+            {
+                try {
+                    badWordIndex.refresh()
+                } catch (e: Exception) {
+                    environment.log.debug("account-name bad words refresh failed: {}", e.message)
+                }
+            },
+            badWordsEveryMin,
+            badWordsEveryMin,
+            TimeUnit.MINUTES,
+        )
 
         val sampleEverySec =
             centralConfig.onlineSampleIntervalSeconds
@@ -205,6 +231,7 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
                 sessionRepository = sessionRepository,
                 activityLogRepository = activityLogRepository,
                 worldListCache = worldListCache,
+                badWordIndex = badWordIndex,
             ),
         )
     }

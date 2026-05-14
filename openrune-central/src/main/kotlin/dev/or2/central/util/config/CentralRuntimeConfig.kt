@@ -24,6 +24,13 @@ data class CentralRuntimeConfig(
     val worldsLinkMaxFramesPerSecond: Int,
     val worldsLinkMaxFrameBurst: Int,
     val onlineSampleIntervalSeconds: Int,
+    /**
+     * Remote newline-separated bad-word list (e.g. gist raw URL). Fetched on schedule and merged
+     * with classpath `profanity/bad_words_local.txt`.
+     */
+    val badWordsRemoteUrl: String,
+    val badWordsRefreshMinutes: Int,
+    val badWordsHttpTimeoutSeconds: Int,
 )
 
 private val log = LoggerFactory.getLogger("dev.or2.central.config")
@@ -123,6 +130,30 @@ fun loadCentralRuntimeConfig(): CentralRuntimeConfig {
             props,
             3600
         ).coerceIn(30, 86_400),
+
+        badWordsRemoteUrl =
+            resolveString(
+                "OPENRUNE_BAD_WORDS_URL",
+                "openrune.badWordsRemoteUrl",
+                props,
+                "https://gist.githubusercontent.com/briankung/e085841a7a13fa4945a0cf482950436a/raw/326b4078db98541204e3d192d7cf84f63cd4c87a/bad_words.txt",
+            ).trim(),
+
+        badWordsRefreshMinutes =
+            resolveInt(
+                "OPENRUNE_BAD_WORDS_REFRESH_MINUTES",
+                "openrune.badWordsRefreshMinutes",
+                props,
+                360,
+            ).coerceIn(5, 10_080),
+
+        badWordsHttpTimeoutSeconds =
+            resolveInt(
+                "OPENRUNE_BAD_WORDS_HTTP_TIMEOUT_SEC",
+                "openrune.badWordsHttpTimeoutSeconds",
+                props,
+                20,
+            ).coerceIn(3, 120),
     )
 }
 
@@ -143,6 +174,10 @@ fun centralRuntimeConfigFromJdbc(
     worldsLinkMaxFramesPerSecond: Int = 80,
     worldsLinkMaxFrameBurst: Int = 120,
     onlineSampleIntervalSeconds: Int = 3600,
+    badWordsRemoteUrl: String =
+        "https://gist.githubusercontent.com/briankung/e085841a7a13fa4945a0cf482950436a/raw/326b4078db98541204e3d192d7cf84f63cd4c87a/bad_words.txt",
+    badWordsRefreshMinutes: Int = 360,
+    badWordsHttpTimeoutSeconds: Int = 20,
 ): CentralRuntimeConfig {
 
     return CentralRuntimeConfig(
@@ -164,6 +199,10 @@ fun centralRuntimeConfigFromJdbc(
         worldsLinkMaxFrameBurst = worldsLinkMaxFrameBurst.coerceIn(1, 100_000),
 
         onlineSampleIntervalSeconds = onlineSampleIntervalSeconds.coerceIn(30, 86_400),
+
+        badWordsRemoteUrl = badWordsRemoteUrl.trim(),
+        badWordsRefreshMinutes = badWordsRefreshMinutes.coerceIn(5, 10_080),
+        badWordsHttpTimeoutSeconds = badWordsHttpTimeoutSeconds.coerceIn(3, 120),
     )
 }
 

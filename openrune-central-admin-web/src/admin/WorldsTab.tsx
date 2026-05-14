@@ -144,7 +144,7 @@ export function WorldsTab({ db }: { db: BridgeDb }) {
         }
         setForm((f) => ({
           ...f,
-          whitelist_usernames: r.rows.map((row) => String(row.login_username ?? "")).join("\n"),
+          whitelist_usernames: r.rows.map((row) => String(row.account_name ?? "")).join("\n"),
         }));
       })
       .catch(() => undefined);
