@@ -25,8 +25,8 @@ INSERT INTO worlds (
     login_gate_min_level_enabled, login_gate_rights_enabled, login_gate_whitelist_enabled
 )
 VALUES (
-    1, 'MEMBERS', '127.0.0.1', 'OpenRune', 255, 0, 0, 1,
-    NULL, NULL, 1,
+    255, 'MEMBERS', '127.0.0.1', 'OpenRune', 0, 0, 0, 1,
+    NULL, NULL, 255,
     0, 0, NULL,
     0, 0, 0
 )

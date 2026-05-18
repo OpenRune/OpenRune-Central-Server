@@ -53,12 +53,174 @@ DELETE FROM world_login_whitelist
 WHERE world_id = $1
 `.trim();
 
+export const WORLD_EXISTS = `
+SELECT 1 AS exists
+FROM worlds
+WHERE world_id = $1
+LIMIT 1
+`.trim();
+
+export const WORLD_SESSION_COUNT = `
+SELECT COUNT(*)::int AS c
+FROM sessions
+WHERE world_id = $1
+`.trim();
+
+export const WORLD_CHARACTER_COUNT = `
+SELECT COUNT(*)::int AS c
+FROM account_characters
+WHERE world_id = $1 OR online_central_world_id = $1
+`.trim();
+
+export const WORLD_DELETE_PREP_SESSIONS = `
+DELETE FROM sessions
+WHERE world_id = $1
+`.trim();
+
+export const WORLD_DELETE_PREP_CHARACTERS = `
+UPDATE account_characters
+SET world_id = NULL, online_central_world_id = NULL
+WHERE world_id = $1 OR online_central_world_id = $1
+`.trim();
+
+export const WORLD_DELETE = `
+DELETE FROM worlds
+WHERE world_id = $1
+`.trim();
+
+/** Copy worlds row to [newId], repoint FKs, remove [oldId]. */
+export const WORLD_RENAME_COPY = `
+INSERT INTO worlds (
+  world_id, flags, host, activity, location, population, sort_order, enabled, max_players, world_key_sha256, realm_id,
+  login_restrictions_enabled, login_min_total_level, login_min_rights_token,
+  login_gate_min_level_enabled, login_gate_rights_enabled, login_gate_whitelist_enabled
+)
+SELECT
+  $1, flags, host, activity, location, population, sort_order, enabled, max_players, world_key_sha256, realm_id,
+  login_restrictions_enabled, login_min_total_level, login_min_rights_token,
+  login_gate_min_level_enabled, login_gate_rights_enabled, login_gate_whitelist_enabled
+FROM worlds
+WHERE world_id = $2
+`.trim();
+
+export const WORLD_RENAME_SESSIONS = `
+UPDATE sessions
+SET world_id = $1
+WHERE world_id = $2
+`.trim();
+
+export const WORLD_RENAME_CHARACTERS_WORLD = `
+UPDATE account_characters
+SET world_id = $1
+WHERE world_id = $2
+`.trim();
+
+export const WORLD_RENAME_CHARACTERS_ONLINE = `
+UPDATE account_characters
+SET online_central_world_id = $1
+WHERE online_central_world_id = $2
+`.trim();
+
+export const WORLD_RENAME_ONLINE_SAMPLES = `
+UPDATE online_samples
+SET world_id = $1
+WHERE world_id = $2
+`.trim();
+
+export const WORLD_RENAME_WHITELIST = `
+UPDATE world_login_whitelist
+SET world_id = $1
+WHERE world_id = $2
+`.trim();
+
+export const WORLD_RENAME_REBOOT_SCHEDULES = `
+UPDATE world_reboot_schedules
+SET world_id = $1
+WHERE world_id = $2
+`.trim();
+
+export const WORLD_RENAME_BROADCAST_LOG = `
+UPDATE world_broadcast_log
+SET world_id = $1
+WHERE world_id = $2
+`.trim();
+
+export const WORLD_RENAME_ACTIVITY_LOGS = `
+UPDATE activity_logs
+SET world_id = $1
+WHERE world_id = $2
+`.trim();
+
 export const WORLD_WHITELIST_INSERT = `
 INSERT INTO world_login_whitelist (world_id, account_name)
 VALUES ($1, $2)
 `.trim();
 
 export const REALMS_LIST = `SELECT * FROM realms ORDER BY realm_id ASC`;
+
+export const REALM_EXISTS = `
+SELECT 1 AS exists
+FROM realms
+WHERE realm_id = $1
+LIMIT 1
+`.trim();
+
+export const REALM_WORLD_COUNT = `
+SELECT COUNT(*)::int AS c
+FROM worlds
+WHERE realm_id = $1
+`.trim();
+
+export const REALM_DELETE = `
+DELETE FROM realms
+WHERE realm_id = $1
+`.trim();
+
+export const REALM_INSERT = `
+INSERT INTO realms (
+  realm_id, name, description, login_message, login_broadcast, spawn_coord, respawn_coord,
+  dev_mode, require_registration, auto_assign_display_names,
+  player_xp_rate_in_hundreds, global_xp_rate_in_hundreds
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+`.trim();
+
+export const REALM_UPDATE = `
+UPDATE realms
+SET
+  name = $1,
+  description = $2,
+  login_message = $3,
+  login_broadcast = $4,
+  spawn_coord = $5,
+  respawn_coord = $6,
+  dev_mode = $7,
+  require_registration = $8,
+  auto_assign_display_names = $9,
+  player_xp_rate_in_hundreds = $10,
+  global_xp_rate_in_hundreds = $11
+WHERE realm_id = $12
+`.trim();
+
+export const REALM_RENAME_COPY = `
+INSERT INTO realms (
+  realm_id, name, description, login_message, login_broadcast, spawn_coord, respawn_coord,
+  dev_mode, require_registration, auto_assign_display_names,
+  player_xp_rate_in_hundreds, global_xp_rate_in_hundreds
+)
+SELECT
+  $1, name, description, login_message, login_broadcast, spawn_coord, respawn_coord,
+  dev_mode, require_registration, auto_assign_display_names,
+  player_xp_rate_in_hundreds, global_xp_rate_in_hundreds
+FROM realms
+WHERE realm_id = $2
+`.trim();
+
+export const REALM_RENAME_WORLDS = `
+UPDATE worlds
+SET realm_id = $1
+WHERE realm_id = $2
+`.trim();
 
 export function escapeLike(s: string): string {
   return s.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");

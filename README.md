@@ -64,6 +64,11 @@ Game server: `central.same-instance: true` (or equivalent) with empty JDBC so th
 | `openrune.worldsLinkMaxFrameBurst` | `OPENRUNE_WORLD_LINK_MAX_FRAME_BURST` | Burst allowance for rate limit |
 | `openrune.onlineSampleIntervalSeconds` | `OPENRUNE_ONLINE_SAMPLE_INTERVAL_SEC` | Interval for `online_samples` (seconds) |
 | `openrune.http.port` | `OPENRUNE_HTTP_PORT` | HTTP port (applied before Ktor engine start) |
+| `openrune.javConfig.revision` | `OPENRUNE_JAV_CONFIG_REVISION` | Remote jav config revision (default `238`) |
+| `openrune.javConfig.remoteUrlTemplate` | `OPENRUNE_JAV_CONFIG_URL_TEMPLATE` | Download URL with `%d` for revision |
+| `openrune.javConfig.configProps.*` | — | Per-key overrides (`param.25`, `msg.ok`, or multiline `openrune.javConfig.configProps`) |
+| `openrune.javConfig.refreshMinutes` | `OPENRUNE_JAV_CONFIG_REFRESH_MINUTES` | Cache refresh interval |
+| `openrune.javConfig.httpTimeoutSeconds` | `OPENRUNE_JAV_CONFIG_HTTP_TIMEOUT_SEC` | HTTP timeout for remote jav config fetch |
 
 World-link keys use the **`worldsLink`** spelling (`openrune.worldsLinkPort`, etc.), matching `CentralRuntimeConfig.kt`.
 
@@ -72,6 +77,7 @@ World-link keys use the **`worldsLink`** spelling (`openrune.worldsLinkPort`, et
 Examples (default Ktor port may be 8080; adjust to your deployment):
 
 - **`GET /worldslist.ws`**, **`GET /worlds.js`** — cached world list payloads for clients
+- **`GET /jav_config.ws`** — proxied Jagex jav config from `openrune.javConfig.remoteUrlTemplate` (revision in `openrune.javConfig.revision`); optional `openrune.javConfig.configProps.*` overrides
 
 ## Admin website (`/admin`)
 

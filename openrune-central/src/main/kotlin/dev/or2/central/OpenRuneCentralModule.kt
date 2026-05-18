@@ -14,6 +14,7 @@ import dev.or2.central.http.centralHttpRoutes
 import dev.or2.central.server.logging.CentralActivityLogRepository
 import dev.or2.central.account.PunishmentService
 import dev.or2.central.http.world.WorldKeyVerifier
+import dev.or2.central.http.javconfig.JavConfigCache
 import dev.or2.central.http.world.WorldListCache
 import dev.or2.central.http.world.WorldLoginGateRepository
 import dev.or2.central.http.world.WorldRepository
@@ -52,6 +53,7 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
 
     val worldRepository = WorldRepository(dataSource)
     val worldListCache = WorldListCache(worldRepository)
+    val javConfigCache = JavConfigCache(centralConfig)
     val accountRepository = AccountRepository(dataSource)
     val passwordHasher = PasswordHasher()
     val sessionRepository = WorldSessionRepository(dataSource)
@@ -152,6 +154,12 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
             environment.log.warn("account-name bad words initial refresh failed: {}", e.message)
         }
 
+        try {
+            javConfigCache.refresh()
+        } catch (e: Exception) {
+            environment.log.warn("jav_config initial refresh failed: {}", e.message)
+        }
+
         worldServerTcpServer?.start()
         punishmentPgListener.start()
         val badWordsEveryMin = centralConfig.badWordsRefreshMinutes.toLong().coerceAtLeast(5L)
@@ -199,6 +207,20 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
             TimeUnit.SECONDS,
         )
 
+        val javEveryMin = centralConfig.javConfigRefreshMinutes.toLong().coerceAtLeast(1L)
+        scheduler.scheduleAtFixedRate(
+            {
+                try {
+                    javConfigCache.refresh()
+                } catch (e: Exception) {
+                    environment.log.debug("jav_config refresh failed: {}", e.message)
+                }
+            },
+            javEveryMin,
+            javEveryMin,
+            TimeUnit.MINUTES,
+        )
+
         environment.log.info("OpenRune Central is online")
     }
 
@@ -231,6 +253,7 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
                 sessionRepository = sessionRepository,
                 activityLogRepository = activityLogRepository,
                 worldListCache = worldListCache,
+                javConfigCache = javConfigCache,
                 badWordIndex = badWordIndex,
             ),
         )

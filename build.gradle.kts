@@ -14,7 +14,7 @@ val hostingDirectory: File =
     System.getenv("HOSTING_DIRECTORY")?.let { File(it) }
         ?: File("D:\\OpenRune\\openrune-hosting")
 
-val buildNumber = System.getenv("BUILD_NUMBER") ?: "1.1"
+val buildNumber = System.getenv("BUILD_NUMBER") ?: "1.3"
 
 subprojects {
     repositories {

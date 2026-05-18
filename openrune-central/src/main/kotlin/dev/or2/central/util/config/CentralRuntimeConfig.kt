@@ -1,5 +1,6 @@
 package dev.or2.central.util.config
 
+import dev.or2.central.http.javconfig.JavConfigMerger
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -31,6 +32,14 @@ data class CentralRuntimeConfig(
     val badWordsRemoteUrl: String,
     val badWordsRefreshMinutes: Int,
     val badWordsHttpTimeoutSeconds: Int,
+    /** Remote jav config revision (`jav_local_%d.ws`). */
+    val javConfigRevision: Int,
+    /** `String.format` pattern with one `%d` for revision, e.g. `https://client.blurite.io/jav_local_%d.ws`. */
+    val javConfigRemoteUrlTemplate: String,
+    /** Logical jav-config keys to replace in the downloaded file (only listed keys are changed). */
+    val javConfigProps: Map<String, String>,
+    val javConfigRefreshMinutes: Int,
+    val javConfigHttpTimeoutSeconds: Int,
 )
 
 private val log = LoggerFactory.getLogger("dev.or2.central.config")
@@ -154,6 +163,40 @@ fun loadCentralRuntimeConfig(): CentralRuntimeConfig {
                 props,
                 20,
             ).coerceIn(3, 120),
+
+        javConfigRevision =
+            resolveInt(
+                "OPENRUNE_JAV_CONFIG_REVISION",
+                "openrune.javConfig.revision",
+                props,
+                238,
+            ).coerceAtLeast(1),
+
+        javConfigRemoteUrlTemplate =
+            resolveString(
+                "OPENRUNE_JAV_CONFIG_URL_TEMPLATE",
+                "openrune.javConfig.remoteUrlTemplate",
+                props,
+                "https://client.blurite.io/jav_local_%d.ws",
+            ).trim(),
+
+        javConfigProps = parseJavConfigProps(props),
+
+        javConfigRefreshMinutes =
+            resolveInt(
+                "OPENRUNE_JAV_CONFIG_REFRESH_MINUTES",
+                "openrune.javConfig.refreshMinutes",
+                props,
+                15,
+            ).coerceIn(1, 10_080),
+
+        javConfigHttpTimeoutSeconds =
+            resolveInt(
+                "OPENRUNE_JAV_CONFIG_HTTP_TIMEOUT_SEC",
+                "openrune.javConfig.httpTimeoutSeconds",
+                props,
+                20,
+            ).coerceIn(3, 120),
     )
 }
 
@@ -178,6 +221,11 @@ fun centralRuntimeConfigFromJdbc(
         "https://gist.githubusercontent.com/briankung/e085841a7a13fa4945a0cf482950436a/raw/326b4078db98541204e3d192d7cf84f63cd4c87a/bad_words.txt",
     badWordsRefreshMinutes: Int = 360,
     badWordsHttpTimeoutSeconds: Int = 20,
+    javConfigRevision: Int = 238,
+    javConfigRemoteUrlTemplate: String = "https://client.blurite.io/jav_local_%d.ws",
+    javConfigProps: Map<String, String> = emptyMap(),
+    javConfigRefreshMinutes: Int = 15,
+    javConfigHttpTimeoutSeconds: Int = 20,
 ): CentralRuntimeConfig {
 
     return CentralRuntimeConfig(
@@ -203,7 +251,38 @@ fun centralRuntimeConfigFromJdbc(
         badWordsRemoteUrl = badWordsRemoteUrl.trim(),
         badWordsRefreshMinutes = badWordsRefreshMinutes.coerceIn(5, 10_080),
         badWordsHttpTimeoutSeconds = badWordsHttpTimeoutSeconds.coerceIn(3, 120),
+
+        javConfigRevision = javConfigRevision.coerceAtLeast(1),
+        javConfigRemoteUrlTemplate = javConfigRemoteUrlTemplate.trim(),
+        javConfigProps = javConfigProps,
+        javConfigRefreshMinutes = javConfigRefreshMinutes.coerceIn(1, 10_080),
+        javConfigHttpTimeoutSeconds = javConfigHttpTimeoutSeconds.coerceIn(3, 120),
     )
+}
+
+private fun parseJavConfigProps(props: Properties): Map<String, String> {
+    val result = linkedMapOf<String, String>()
+
+    resolvePropertyValue("openrune.javConfig.configProps", props)?.let { block ->
+        val normalized = block.replace("\\n", "\n")
+        for (line in normalized.lines()) {
+            JavConfigMerger.parseOverrideEntryLine(line)?.let { (key, value) ->
+                result[key] = value
+            }
+        }
+    }
+
+    val prefix = "openrune.javConfig.configProps."
+    for (name in props.stringPropertyNames()) {
+        if (!name.startsWith(prefix)) continue
+        val suffix = name.removePrefix(prefix)
+        val value =
+            resolvePropertyValue(name, props)?.trim()?.takeIf { it.isNotEmpty() }
+                ?: continue
+        result[JavConfigMerger.configPropSuffixToLineKey(suffix)] = value
+    }
+
+    return result
 }
 
 fun applyKtorHttpPortFromCentralConfigBeforeEngineStart() {

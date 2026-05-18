@@ -4,9 +4,11 @@ import dev.or2.central.account.AccountNameAuthPolicy
 import dev.or2.central.account.BadWordIndex
 import dev.or2.central.server.logging.CentralActivityLogRepository
 import dev.or2.central.server.session.WorldSessionRepository
+import dev.or2.central.http.javconfig.JavConfigCache
 import dev.or2.central.http.world.WorldListCache
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.http.content.singlePageApplication
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
@@ -18,6 +20,7 @@ data class CentralHttpContext(
     val sessionRepository: WorldSessionRepository,
     val activityLogRepository: CentralActivityLogRepository,
     val worldListCache: WorldListCache,
+    val javConfigCache: JavConfigCache,
     val badWordIndex: BadWordIndex,
 )
 
@@ -38,6 +41,21 @@ fun Route.centralHttpRoutes(ctx: CentralHttpContext) {
         val body = ctx.worldListCache.worldListJsSnapshot()
         call.response.headers.append(HttpHeaders.CacheControl, "no-store")
         call.respondText(body, ContentType.Application.Json)
+    }
+
+    get("/jav_config.ws") {
+        val body =
+            ctx.javConfigCache.snapshot()
+                ?: run {
+                    call.respondText(
+                        "jav_config unavailable",
+                        ContentType.Text.Plain,
+                        HttpStatusCode.ServiceUnavailable,
+                    )
+                    return@get
+                }
+        call.response.headers.append(HttpHeaders.CacheControl, "no-store")
+        call.respondText(body, ContentType.Text.Plain)
     }
 
     get("/admin/api/account-name-deceptive-fragments.txt") {
