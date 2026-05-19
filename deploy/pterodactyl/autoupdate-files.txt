@@ -1,0 +1,7 @@
+start.sh
+start-modules.sh
+modules/config/start.sh
+modules/logcleaner/start.sh
+modules/cloudflared/start.sh
+modules/autoupdate/start.sh
+autoupdate-files.txt

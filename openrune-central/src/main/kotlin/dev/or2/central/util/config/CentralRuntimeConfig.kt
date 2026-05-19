@@ -1,12 +1,6 @@
 package dev.or2.central.util.config
 
 import dev.or2.central.http.javconfig.JavConfigMerger
-import java.io.InputStreamReader
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
-import java.util.Properties
 import org.slf4j.LoggerFactory
 
 data class CentralRuntimeConfig(
@@ -40,164 +34,103 @@ data class CentralRuntimeConfig(
     val javConfigProps: Map<String, String>,
     val javConfigRefreshMinutes: Int,
     val javConfigHttpTimeoutSeconds: Int,
+    /**
+     * When true, trust `X-Forwarded-*` headers from a reverse proxy or Cloudflare Tunnel
+     * (`X-Forwarded-Proto`, host, client IP). Enable only when HTTP is not exposed directly.
+     * Auto-enabled when Cloudflare Tunnel is configured (`CLOUDFLARED_STATUS` + token)
+     * unless overridden by `openrune.http.trustProxy`.
+     */
+    val httpTrustProxy: Boolean,
 )
 
 private val log = LoggerFactory.getLogger("dev.or2.central.config")
 
 fun loadCentralRuntimeConfig(): CentralRuntimeConfig {
-    val props = loadCentralConfigPropertiesInternal()
+    val cfg = loadMergedCentralConfig()
+    val database = resolveRequiredDatabaseConfig(cfg)
 
-    val jdbcUrl = resolveString(
-        "OPENRUNE_JDBC_URL",
-        "openrune.jdbc.url",
-        props,
-        "jdbc:postgresql://127.0.0.1:5432/openrune_central"
-    ).trim()
-
-    val dbUser = resolveString("OPENRUNE_DB_USER", "openrune.db.user", props, "openrune").trim()
-    val dbPassword = resolveString("OPENRUNE_DB_PASSWORD", "openrune.db.password", props, "openrune")
-
-    val dbPoolSize = resolveInt("OPENRUNE_DB_POOL_SIZE", "openrune.db.poolSize", props, 10)
-        .coerceIn(1, 100)
-
-    val sessionsTtl = resolveLong("OPENRUNE_SESSION_TTL_MS", "openrune.sessionsTtlMs", props, 300_000L)
-        .coerceAtLeast(1L)
+    val sessionsTtl = cfg.long(CentralConfigKey.SESSION_TTL_MS, 300_000L).coerceAtLeast(1L)
 
     val handlerThreadsDefault =
         maxOf(4, minOf(32, Runtime.getRuntime().availableProcessors() * 2))
 
     return CentralRuntimeConfig(
-        jdbcUrl = jdbcUrl,
-        dbUser = dbUser,
-        dbPassword = dbPassword,
-        dbMaximumPoolSize = dbPoolSize,
+        jdbcUrl = database.jdbcUrl,
+        dbUser = database.user,
+        dbPassword = database.password,
+        dbMaximumPoolSize = database.poolSize,
         sessionsTtlMillis = sessionsTtl,
 
-        worldsLinkPort = resolveWorldLinkPort(
-            resolveOptionalString("OPENRUNE_WORLD_LINK_PORT", "openrune.worldsLinkPort", props)
-        ),
+        worldsLinkPort = resolveWorldLinkPort(cfg.optionalString(CentralConfigKey.WORLDS_LINK_PORT)),
 
-        worldsLinkSoBacklog = resolveInt(
-            "OPENRUNE_WORLD_LINK_SO_BACKLOG",
-            "openrune.worldsLinkSoBacklog",
-            props,
-            512
-        ).coerceIn(64, 16_384),
+        worldsLinkSoBacklog = cfg.int(CentralConfigKey.WORLDS_LINK_SO_BACKLOG, 512).coerceIn(64, 16_384),
 
-        worldsLinkReadTimeoutSeconds = resolveInt(
-            "OPENRUNE_WORLD_LINK_READ_TIMEOUT_SEC",
-            "openrune.worldsLinkReadTimeoutSeconds",
-            props,
-            120
-        ).coerceIn(5, 3600),
+        worldsLinkReadTimeoutSeconds =
+            cfg.int(CentralConfigKey.WORLDS_LINK_READ_TIMEOUT_SEC, 120).coerceIn(5, 3600),
 
-        worldsLinkMaxConnectionsPerIp = resolveInt(
-            "OPENRUNE_WORLD_LINK_MAX_CONN_PER_IP",
-            "openrune.worldsLinkMaxConnectionsPerIp",
-            props,
-            32
-        ).coerceIn(0, 4096),
+        worldsLinkMaxConnectionsPerIp =
+            cfg.int(CentralConfigKey.WORLDS_LINK_MAX_CONN_PER_IP, 32).coerceIn(0, 4096),
 
-        worldsLinkMaxConnectionsTotal = resolveInt(
-            "OPENRUNE_WORLD_LINK_MAX_CONN_TOTAL",
-            "openrune.worldsLinkMaxConnectionsTotal",
-            props,
-            4096
-        ).coerceIn(0, 262_144),
+        worldsLinkMaxConnectionsTotal =
+            cfg.int(CentralConfigKey.WORLDS_LINK_MAX_CONN_TOTAL, 4096).coerceIn(0, 262_144),
 
-        worldsLinkHandlerThreads = resolveInt(
-            "OPENRUNE_WORLD_LINK_HANDLER_THREADS",
-            "openrune.worldsLinkHandlerThreads",
-            props,
-            handlerThreadsDefault
-        ).coerceIn(1, 256),
+        worldsLinkHandlerThreads =
+            cfg.int(CentralConfigKey.WORLDS_LINK_HANDLER_THREADS, handlerThreadsDefault).coerceIn(1, 256),
 
-        worldsLinkHandlerQueueSize = resolveInt(
-            "OPENRUNE_WORLD_LINK_HANDLER_QUEUE",
-            "openrune.worldsLinkHandlerQueueSize",
-            props,
-            2048
-        ).coerceIn(32, 65_536),
+        worldsLinkHandlerQueueSize =
+            cfg.int(CentralConfigKey.WORLDS_LINK_HANDLER_QUEUE, 2048).coerceIn(32, 65_536),
 
-        worldsLinkMaxFramesPerSecond = resolveInt(
-            "OPENRUNE_WORLD_LINK_MAX_FRAMES_PER_SEC",
-            "openrune.worldsLinkMaxFramesPerSecond",
-            props,
-            80
-        ).coerceIn(0, 10_000),
+        worldsLinkMaxFramesPerSecond =
+            cfg.int(CentralConfigKey.WORLDS_LINK_MAX_FRAMES_PER_SEC, 80).coerceIn(0, 10_000),
 
-        worldsLinkMaxFrameBurst = resolveInt(
-            "OPENRUNE_WORLD_LINK_MAX_FRAME_BURST",
-            "openrune.worldsLinkMaxFrameBurst",
-            props,
-            120
-        ).coerceIn(1, 100_000),
+        worldsLinkMaxFrameBurst =
+            cfg.int(CentralConfigKey.WORLDS_LINK_MAX_FRAME_BURST, 120).coerceIn(1, 100_000),
 
-        onlineSampleIntervalSeconds = resolveInt(
-            "OPENRUNE_ONLINE_SAMPLE_INTERVAL_SEC",
-            "openrune.onlineSampleIntervalSeconds",
-            props,
-            3600
-        ).coerceIn(30, 86_400),
+        onlineSampleIntervalSeconds =
+            cfg.int(CentralConfigKey.ONLINE_SAMPLE_INTERVAL_SEC, 3600).coerceIn(30, 86_400),
 
         badWordsRemoteUrl =
-            resolveString(
-                "OPENRUNE_BAD_WORDS_URL",
-                "openrune.badWordsRemoteUrl",
-                props,
+            cfg.string(
+                CentralConfigKey.BAD_WORDS_URL,
                 "https://gist.githubusercontent.com/briankung/e085841a7a13fa4945a0cf482950436a/raw/326b4078db98541204e3d192d7cf84f63cd4c87a/bad_words.txt",
             ).trim(),
 
         badWordsRefreshMinutes =
-            resolveInt(
-                "OPENRUNE_BAD_WORDS_REFRESH_MINUTES",
-                "openrune.badWordsRefreshMinutes",
-                props,
-                360,
-            ).coerceIn(5, 10_080),
+            cfg.int(CentralConfigKey.BAD_WORDS_REFRESH_MINUTES, 360).coerceIn(5, 10_080),
 
         badWordsHttpTimeoutSeconds =
-            resolveInt(
-                "OPENRUNE_BAD_WORDS_HTTP_TIMEOUT_SEC",
-                "openrune.badWordsHttpTimeoutSeconds",
-                props,
-                20,
-            ).coerceIn(3, 120),
+            cfg.int(CentralConfigKey.BAD_WORDS_HTTP_TIMEOUT_SEC, 20).coerceIn(3, 120),
 
-        javConfigRevision =
-            resolveInt(
-                "OPENRUNE_JAV_CONFIG_REVISION",
-                "openrune.javConfig.revision",
-                props,
-                238,
-            ).coerceAtLeast(1),
+        javConfigRevision = cfg.int(CentralConfigKey.JAV_CONFIG_REVISION, 238).coerceAtLeast(1),
 
         javConfigRemoteUrlTemplate =
-            resolveString(
-                "OPENRUNE_JAV_CONFIG_URL_TEMPLATE",
-                "openrune.javConfig.remoteUrlTemplate",
-                props,
+            cfg.string(
+                CentralConfigKey.JAV_CONFIG_URL_TEMPLATE,
                 "https://client.blurite.io/jav_local_%d.ws",
             ).trim(),
 
-        javConfigProps = parseJavConfigProps(props),
+        javConfigProps = parseJavConfigProps(cfg),
 
         javConfigRefreshMinutes =
-            resolveInt(
-                "OPENRUNE_JAV_CONFIG_REFRESH_MINUTES",
-                "openrune.javConfig.refreshMinutes",
-                props,
-                15,
-            ).coerceIn(1, 10_080),
+            cfg.int(CentralConfigKey.JAV_CONFIG_REFRESH_MINUTES, 15).coerceIn(1, 10_080),
 
         javConfigHttpTimeoutSeconds =
-            resolveInt(
-                "OPENRUNE_JAV_CONFIG_HTTP_TIMEOUT_SEC",
-                "openrune.javConfig.httpTimeoutSeconds",
-                props,
-                20,
-            ).coerceIn(3, 120),
+            cfg.int(CentralConfigKey.JAV_CONFIG_HTTP_TIMEOUT_SEC, 20).coerceIn(3, 120),
+
+        httpTrustProxy = resolveHttpTrustProxy(cfg),
     )
+}
+
+private fun resolveHttpTrustProxy(cfg: CentralMergedConfig): Boolean {
+    cfg.optionalBoolean(CentralConfigKey.HTTP_TRUST_PROXY)?.let { return it }
+
+    if (!CloudflaredTunnelEnv.isConfigured(cfg)) return false
+
+    log.info(
+        "Cloudflare Tunnel enabled (CLOUDFLARED_STATUS); " +
+            "enabling HTTP reverse-proxy headers (X-Forwarded-*)",
+    )
+    return true
 }
 
 fun centralRuntimeConfigFromJdbc(
@@ -226,7 +159,11 @@ fun centralRuntimeConfigFromJdbc(
     javConfigProps: Map<String, String> = emptyMap(),
     javConfigRefreshMinutes: Int = 15,
     javConfigHttpTimeoutSeconds: Int = 20,
+    httpTrustProxy: Boolean = false,
 ): CentralRuntimeConfig {
+    require(jdbcUrl.isNotBlank()) { "jdbcUrl is required" }
+    require(dbUser.isNotBlank()) { "dbUser is required" }
+    require(dbPassword.isNotBlank()) { "dbPassword is required" }
 
     return CentralRuntimeConfig(
         jdbcUrl = jdbcUrl.trim(),
@@ -257,134 +194,123 @@ fun centralRuntimeConfigFromJdbc(
         javConfigProps = javConfigProps,
         javConfigRefreshMinutes = javConfigRefreshMinutes.coerceIn(1, 10_080),
         javConfigHttpTimeoutSeconds = javConfigHttpTimeoutSeconds.coerceIn(3, 120),
+        httpTrustProxy = httpTrustProxy,
     )
 }
 
-private fun parseJavConfigProps(props: Properties): Map<String, String> {
-    val result = linkedMapOf<String, String>()
+data class ResolvedDatabaseConfig(
+    val jdbcUrl: String,
+    val user: String,
+    val password: String,
+    val poolSize: Int,
+)
 
-    resolvePropertyValue("openrune.javConfig.configProps", props)?.let { block ->
-        val normalized = block.replace("\\n", "\n")
-        for (line in normalized.lines()) {
-            JavConfigMerger.parseOverrideEntryLine(line)?.let { (key, value) ->
-                result[key] = value
-            }
+internal fun resolveRequiredDatabaseConfig(cfg: CentralMergedConfig): ResolvedDatabaseConfig {
+    val poolSize = cfg.int(CentralConfigKey.DB_POOL_SIZE, 10).coerceIn(1, 100)
+    val jdbcUrl = resolveJdbcUrl(cfg, requirePartsWhenUrlMissing = true)
+    val requireCredentials = cfg.boolean(CentralConfigKey.DB_REQUIRE_CREDENTIALS, defaultRequireDbCredentials(cfg))
+
+    val user =
+        if (requireCredentials) {
+            cfg.requireRaw(CentralConfigKey.DB_USER, "database user")
+        } else {
+            cfg.optionalString(CentralConfigKey.DB_USER).orEmpty()
+        }
+    val password =
+        if (requireCredentials) {
+            cfg.requireRaw(CentralConfigKey.DB_PASSWORD, "database password")
+        } else {
+            cfg.optionalString(CentralConfigKey.DB_PASSWORD).orEmpty()
+        }
+
+    return ResolvedDatabaseConfig(
+        jdbcUrl = jdbcUrl,
+        user = user,
+        password = password,
+        poolSize = poolSize,
+    )
+}
+
+/** Default: require user/password unless a full JDBC URL is configured (credentials may be in the URL). */
+private fun defaultRequireDbCredentials(cfg: CentralMergedConfig): Boolean =
+    cfg.raw(CentralConfigKey.JDBC_URL).isNullOrBlank()
+
+/**
+ * Resolves JDBC URL from `OPENRUNE_JDBC_URL` / `openrune.jdbc.url`, or from
+ * `openrune.db.host` + `openrune.db.port` + `openrune.db.name`.
+ */
+internal fun resolveJdbcUrl(
+    cfg: CentralMergedConfig,
+    requirePartsWhenUrlMissing: Boolean = false,
+): String {
+    cfg.raw(CentralConfigKey.JDBC_URL)?.let { return it }
+
+    val host = cfg.raw(CentralConfigKey.DB_HOST)
+    val port = cfg.int(CentralConfigKey.DB_PORT, 5432)
+    val name = cfg.raw(CentralConfigKey.DB_NAME)
+
+    if (requirePartsWhenUrlMissing) {
+        val resolvedHost =
+            host?.takeIf { it.isNotEmpty() }
+                ?: throw CentralConfigException(
+                    cfg.missingMessage(CentralConfigKey.DB_HOST, "database host"),
+                )
+        val resolvedName =
+            name?.takeIf { it.isNotEmpty() }
+                ?: throw CentralConfigException(
+                    cfg.missingMessage(CentralConfigKey.DB_NAME, "database name"),
+                )
+        return "jdbc:postgresql://$resolvedHost:$port/$resolvedName"
+    }
+
+    if (!host.isNullOrBlank() && !name.isNullOrBlank()) {
+        return "jdbc:postgresql://${host.trim()}:$port/${name.trim()}"
+    }
+
+    throw CentralConfigException(
+        "Database is not configured: set ${CentralConfigKey.JDBC_URL.envVar} / ${CentralConfigKey.JDBC_URL.yamlPath}, or " +
+            "${CentralConfigKey.DB_HOST.envVar} + ${CentralConfigKey.DB_NAME.envVar} " +
+            "(and usually ${CentralConfigKey.DB_USER.envVar} / ${CentralConfigKey.DB_PASSWORD.envVar}) " +
+            "in the environment or central-config.yaml",
+    )
+}
+
+internal fun mergeJavConfigOverrideLines(
+    result: MutableMap<String, String>,
+    rawBlock: String,
+) {
+    val normalized = rawBlock.replace("\\n", "\n")
+    for (line in normalized.lines()) {
+        JavConfigMerger.parseOverrideEntryLine(line)?.let { (key, value) ->
+            result[key] = value
         }
     }
+}
 
-    val prefix = "openrune.javConfig.configProps."
-    for (name in props.stringPropertyNames()) {
-        if (!name.startsWith(prefix)) continue
-        val suffix = name.removePrefix(prefix)
-        val value =
-            resolvePropertyValue(name, props)?.trim()?.takeIf { it.isNotEmpty() }
-                ?: continue
-        result[JavConfigMerger.configPropSuffixToLineKey(suffix)] = value
+private fun parseJavConfigProps(cfg: CentralMergedConfig): Map<String, String> {
+    val result = linkedMapOf<String, String>()
+    val prefix = CentralConfigKey.JAV_CONFIG_PROPS_PREFIX
+
+    for ((path, value) in cfg.yamlFlat) {
+        if (!path.startsWith(prefix)) continue
+        val suffix = path.removePrefix(prefix)
+        if (value.isBlank()) continue
+        result[JavConfigMerger.configPropSuffixToLineKey(suffix)] = value.trim()
     }
+
+    cfg.raw(CentralConfigKey.JAV_CONFIG_PROPS_BLOCK)?.let { mergeJavConfigOverrideLines(result, it) }
 
     return result
 }
 
 fun applyKtorHttpPortFromCentralConfigBeforeEngineStart() {
-    val props = loadCentralConfigPropertiesInternal()
-
-    val port = resolveInt("OPENRUNE_HTTP_PORT", "openrune.http.port", props, -1)
-        .takeIf { it in 1..65535 }
+    val cfg = loadMergedCentralConfig()
+    val port = cfg.int(CentralConfigKey.HTTP_PORT, -1).takeIf { it in 1..65535 }
 
     if (port != null) {
         System.setProperty("ktor.deployment.port", port.toString())
         log.info("Ktor HTTP port set to {}", port)
     }
-}
-
-private fun env(name: String): String? =
-    System.getenv(name)?.trim()?.takeIf { it.isNotEmpty() }
-
-private fun resolveString(env: String, prop: String, props: Properties, default: String): String =
-    env(env)
-        ?: resolvePropertyValue(prop, props)?.trim()?.takeIf { it.isNotEmpty() }
-        ?: default
-
-private fun resolveOptionalString(env: String, prop: String, props: Properties): String? =
-    env(env)
-        ?: resolvePropertyValue(prop, props)?.trim()?.takeIf { it.isNotEmpty() }
-
-private fun resolveInt(env: String, prop: String, props: Properties, default: Int): Int =
-    env(env)?.toIntOrNull()
-        ?: resolvePropertyValue(prop, props)?.toIntOrNull()
-        ?: default
-
-private fun resolveLong(env: String, prop: String, props: Properties, default: Long): Long =
-    env(env)?.toLongOrNull()
-        ?: resolvePropertyValue(prop, props)?.toLongOrNull()
-        ?: default
-
-private val envPlaceholderRegex = Regex("""\{env\.([A-Za-z0-9_.-]+)}""")
-
-private fun resolvePropertyValue(propKey: String, props: Properties): String? {
-    val raw = props.getProperty(propKey) ?: return null
-    return envPlaceholderRegex.replace(raw) { match ->
-        resolveEnv(match.groupValues[1]) ?: ""
-    }
-}
-
-private fun resolveEnv(key: String): String? =
-    listOf(
-        key,
-        key.uppercase(),
-        key.replace('.', '_').replace('-', '_'),
-        key.replace('.', '_').replace('-', '_').uppercase()
-    ).firstNotNullOfOrNull(System::getenv)
-
-private fun loadCentralConfigPropertiesInternal(): Properties {
-    val props = Properties()
-    val userDir = System.getProperty("user.dir") ?: "."
-
-    val explicit = System.getenv("OPENRUNE_CONFIG")?.trim()?.takeIf { it.isNotEmpty() }
-
-    if (explicit != null) {
-        val path = Paths.get(explicit)
-        if (Files.isRegularFile(path)) {
-            loadPropsFromPath(props, path)
-            log.info("Loaded central config from {}", path.toAbsolutePath().normalize())
-            return props
-        }
-        log.warn("OPENRUNE_CONFIG invalid: {}", explicit)
-    }
-
-    val cwd = Paths.get(userDir, "central-config.properties")
-    if (Files.isRegularFile(cwd)) {
-        loadPropsFromPath(props, cwd)
-        log.info("Loaded central config from {}", cwd.toAbsolutePath().normalize())
-        return props
-    }
-
-    jarSiblingDirectory()?.resolve("central-config.properties")?.let {
-        if (Files.isRegularFile(it)) {
-            loadPropsFromPath(props, it)
-            log.info("Loaded central config from {}", it.toAbsolutePath().normalize())
-            return props
-        }
-    }
-
-    log.warn("No central-config.properties found, using defaults")
-    return props
-}
-
-private fun loadPropsFromPath(props: Properties, path: Path) {
-    Files.newInputStream(path).use { ins ->
-        InputStreamReader(ins, StandardCharsets.UTF_8).use { reader ->
-            props.load(reader)
-        }
-    }
-}
-
-private fun jarSiblingDirectory(): Path? {
-    val url = CentralRuntimeConfig::class.java.protectionDomain?.codeSource?.location ?: return null
-    return runCatching {
-        val p = Paths.get(url.toURI())
-        if (Files.isRegularFile(p) && p.toString().endsWith(".jar")) p.parent else null
-    }.getOrNull()
 }
 
 private fun resolveWorldLinkPort(raw: String?): Int? {

@@ -4,28 +4,239 @@
     "version": "PTDL_v2",
     "update_url": null
   },
-  "exported_at": "2026-05-18T16:26:18+02:00",
+  "exported_at": "2026-05-19T00:00:00+00:00",
   "name": "OpenRune Central Server",
   "author": "OpenRune",
-  "description": "Runs OpenRune Central Server",
+  "description": "OpenRune Central (HTTP APIs + world-link TCP).\r\n\r\nSet DB, HTTP port, and jav_config overrides in Startup variables (writes central-config.yaml). Auto-updates scripts from GitHub. Console: !help, stop, refresh …",
   "features": [],
   "docker_images": {
-    "Java 21": "ghcr.io\/pterodactyl\/yolks:java_21"
+    "Java 21": "ghcr.io/pterodactyl/yolks:java_21"
   },
   "file_denylist": [],
-  "startup": "java -Xms128M -XX:MaxRAMPercentage=95.0 {{JVM_EXTRA_FLAGS}} -Duser.dir=\/home\/container -jar openrune-central-server.jar",
+  "startup": "bash start.sh",
   "config": {
     "files": "{}",
     "startup": "{\r\n    \"done\": \"OpenRune Central is online\"\r\n}",
-    "logs": "{}",
+    "logs": "{\r\n    \"custom\": [\r\n        {\r\n            \"files\": \"logs/cloudflared.log\",\r\n            \"name\": \"Cloudflared\"\r\n        }\r\n    ]\r\n}",
     "stop": "stop"
   },
   "scripts": {
     "installation": {
-      "script": null,
-      "container": "alpine:3.4",
-      "entrypoint": "ash"
+      "script": "#!/bin/bash\ncurl -fsSL \"https://raw.githubusercontent.com/OpenRune/OpenRune-Central-Server/main/deploy/pterodactyl/install.sh\" | bash",
+      "container": "alpine:3.20",
+      "entrypoint": "bash"
     }
   },
-  "variables": []
+  "variables": [
+    {
+      "name": "Server JAR file",
+      "description": "Filename of the uploaded Central server JAR in /home/container.",
+      "env_variable": "SERVER_JAR",
+      "default_value": "openrune-central-server.jar",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:128",
+      "field_type": "text"
+    },
+    {
+      "name": "JVM Extra Flags",
+      "description": "Additional JVM flags (e.g. -Xmx512M)",
+      "env_variable": "JVM_EXTRA_FLAGS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string",
+      "field_type": "text"
+    },
+    {
+      "name": "Write central-config.yaml",
+      "description": "Generate central-config.yaml from the variables below on each start (1 = yes, 0 = use uploaded file only).",
+      "env_variable": "OPENRUNE_WRITE_CONFIG",
+      "default_value": "1",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
+      "name": "HTTP port",
+      "description": "Ktor HTTP port (world list, jav_config, admin). Match your public URL / Cloudflare tunnel target.",
+      "env_variable": "OPENRUNE_HTTP_PORT",
+      "default_value": "8080",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|between:1,65535",
+      "field_type": "text"
+    },
+    {
+      "name": "Database host",
+      "description": "PostgreSQL hostname (used if JDBC URL is empty).",
+      "env_variable": "OPENRUNE_DB_HOST",
+      "default_value": "127.0.0.1",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:255",
+      "field_type": "text"
+    },
+    {
+      "name": "Database port",
+      "description": "PostgreSQL port.",
+      "env_variable": "OPENRUNE_DB_PORT",
+      "default_value": "5432",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|between:1,65535",
+      "field_type": "text"
+    },
+    {
+      "name": "Database name",
+      "description": "PostgreSQL database name.",
+      "env_variable": "OPENRUNE_DB_NAME",
+      "default_value": "openrune_central",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:128",
+      "field_type": "text"
+    },
+    {
+      "name": "Database user",
+      "description": "PostgreSQL user.",
+      "env_variable": "OPENRUNE_DB_USER",
+      "default_value": "openrune",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:128",
+      "field_type": "text"
+    },
+    {
+      "name": "Database password",
+      "description": "PostgreSQL password.",
+      "env_variable": "OPENRUNE_DB_PASSWORD",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|min:1|max:512",
+      "field_type": "text"
+    },
+    {
+      "name": "Database pool size",
+      "description": "Hikari maximum pool size (1–100).",
+      "env_variable": "OPENRUNE_DB_POOL_SIZE",
+      "default_value": "10",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|between:1,100",
+      "field_type": "text"
+    },
+    {
+      "name": "JDBC URL (optional)",
+      "description": "Full JDBC URL override. If set, host/port/name are ignored.",
+      "env_variable": "OPENRUNE_JDBC_URL",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:512",
+      "field_type": "text"
+    },
+    {
+      "name": "Session TTL (ms)",
+      "description": "Stale session sweep TTL in milliseconds.",
+      "env_variable": "OPENRUNE_SESSION_TTL_MS",
+      "default_value": "300000",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|min:1000",
+      "field_type": "text"
+    },
+    {
+      "name": "World-link TCP port",
+      "description": "World server auth port (0 or false to disable).",
+      "env_variable": "OPENRUNE_WORLD_LINK_PORT",
+      "default_value": "9091",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:8",
+      "field_type": "text"
+    },
+    {
+      "name": "Jav config revision",
+      "description": "Remote jav_config revision (jav_local_%d.ws).",
+      "env_variable": "OPENRUNE_JAV_CONFIG_REVISION",
+      "default_value": "238",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|min:1",
+      "field_type": "text"
+    },
+    {
+      "name": "Jav config overrides",
+      "description": "Paste jav_config.ws lines to override (one per line): title=…, codebase=…, param=25=…, msg=ok=…",
+      "env_variable": "OPENRUNE_JAV_CONFIG_PROPS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string",
+      "field_type": "text"
+    },
+    {
+      "name": "Enable Auto-Update",
+      "description": "Check GitHub for newer deploy/pterodactyl scripts on startup (1 = on, 0 = off).",
+      "env_variable": "AUTOUPDATE_STATUS",
+      "default_value": "1",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
+      "name": "Force Auto-Update",
+      "description": "Apply script updates without prompting (1 = auto, 0 = notify only).",
+      "env_variable": "AUTOUPDATE_FORCE",
+      "default_value": "1",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
+      "name": "Auto-Update Branch",
+      "description": "Git branch for script sync (default main).",
+      "env_variable": "AUTOUPDATE_BRANCH",
+      "default_value": "main",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:64",
+      "field_type": "text"
+    },
+    {
+      "name": "Enable Logcleaner Module",
+      "description": "Clean logs/tmp from the previous run before starting (1 = on, 0 = off).",
+      "env_variable": "LOGCLEANER_STATUS",
+      "default_value": "1",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
+      "name": "Enable Cloudflare Tunnel",
+      "description": "Start cloudflared on boot and enable HTTPS via Cloudflare (0 = off, 1 = on).",
+      "env_variable": "CLOUDFLARED_STATUS",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
+      "name": "Cloudflared Tunnel Token",
+      "description": "Tunnel run token from Cloudflare (Zero Trust → Networks → Tunnels → Install connector).",
+      "env_variable": "CLOUDFLARED_TOKEN",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string",
+      "field_type": "text"
+    }
+  ]
 }
