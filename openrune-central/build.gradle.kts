@@ -35,6 +35,7 @@ dependencies {
     implementation("io.ktor:ktor-server-content-negotiation")
     implementation("io.ktor:ktor-serialization-kotlinx-json")
     implementation("io.ktor:ktor-server-status-pages")
+    implementation("io.ktor:ktor-server-forwarded-header")
     implementation("io.ktor:ktor-server-config-yaml")
 
     implementation("com.zaxxer:HikariCP:6.2.1")
@@ -42,6 +43,7 @@ dependencies {
     implementation("io.zonky.test:embedded-postgres:2.2.2")
 
     implementation("ch.qos.logback:logback-classic:1.5.16")
+    implementation("org.yaml:snakeyaml:2.3")
 
     implementation("io.netty:netty-handler:4.1.118.Final")
     implementation("de.mkammerer:argon2-jvm:2.12")
