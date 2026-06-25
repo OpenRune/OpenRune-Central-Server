@@ -145,6 +145,8 @@ fun Application.installOpenRuneCentral(centralConfig: CentralRuntimeConfig) {
     val staleSessionSweeper =
         WorldSessionReaper(
             sessionRepository = sessionRepository,
+            socialRepository = centralSocialRepository,
+            worldServerPushChannelRegistry = worldServerPushChannelRegistry,
             worldListCache = worldListCache,
             ttlMillis = centralConfig.sessionsTtlMillis,
             scheduler = scheduler,

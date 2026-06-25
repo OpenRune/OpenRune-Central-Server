@@ -417,6 +417,8 @@ class WorldServerSessionService(
             return socialFail(WorldServerOpcodes.SOCIAL_FAIL_NOT_ALLOWED)
         }
 
+        sessionRepository.touchById(row.id, System.currentTimeMillis())
+
         val fromCharacterId = input.readIntCompat()
         val senderCrown = input.readUnsignedByteCompat()
         val targetName = input.readUtf8LenPrefixed().trim()
@@ -491,6 +493,8 @@ class WorldServerSessionService(
         if (row.worldId != state.worldId) {
             return socialFail(WorldServerOpcodes.SOCIAL_FAIL_NOT_ALLOWED)
         }
+
+        sessionRepository.touchById(row.id, System.currentTimeMillis())
 
         val characterId = input.readIntCompat()
         val targetName = input.readUtf8LenPrefixed().trim()
@@ -627,6 +631,8 @@ class WorldServerSessionService(
             return socialFail(WorldServerOpcodes.SOCIAL_FAIL_NOT_ALLOWED)
         }
 
+        sessionRepository.touchById(row.id, System.currentTimeMillis())
+
         val characterId = input.readIntCompat()
         input.readUnsignedByteCompat() // public chat; owned by the game server, ignored here
         val privateChat = input.readUnsignedByteCompat()
@@ -695,6 +701,8 @@ class WorldServerSessionService(
                 writeSocialSyncFail(WorldServerOpcodes.SOCIAL_FAIL_NOT_ALLOWED)
             )
         }
+
+        sessionRepository.touchById(row.id, System.currentTimeMillis())
 
         val characterId = input.readIntCompat()
 
