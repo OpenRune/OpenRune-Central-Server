@@ -253,30 +253,37 @@ class CentralSocialRepository(
             COALESCE(f.public_chat, 0) AS public_chat,
             COALESCE(f.private_chat, 0) AS private_chat,
             EXISTS (
-                SELECT 1
-                FROM character_ignores i
-                WHERE i.owner_character_id = c.id
-                  AND i.ignored_character_id = ?
+        SELECT 1
+            FROM character_ignores i
+            WHERE i.owner_character_id = c.id
+            AND i.ignored_character_id = ?
             ) AS target_ignores_owner,
             EXISTS (
-                SELECT 1
-                FROM character_friends rf
-                WHERE rf.owner_character_id = c.id
-                  AND rf.friend_character_id = ?
+        SELECT 1
+            FROM character_ignores oi
+            WHERE oi.owner_character_id = ?
+            AND oi.ignored_character_id = c.id
+            ) AS owner_ignores_target,
+            EXISTS (
+        SELECT 1
+            FROM character_friends rf
+            WHERE rf.owner_character_id = c.id
+            AND rf.friend_character_id = ?
             ) AS target_has_owner_friend
-        FROM character_friends cf
-        JOIN account_characters c ON c.id = cf.friend_character_id
-        LEFT JOIN sessions s ON s.character_id = c.id
-        LEFT JOIN character_chat_filters f ON f.character_id = c.id
-        WHERE cf.owner_character_id = ?
-        ORDER BY LOWER(c.display_name)
+            FROM character_friends cf
+            JOIN account_characters c ON c.id = cf.friend_character_id
+            LEFT JOIN sessions s ON s.character_id = c.id
+            LEFT JOIN character_chat_filters f ON f.character_id = c.id
+            WHERE cf.owner_character_id = ?
+            ORDER BY LOWER(c.display_name)
         """.trimIndent()
 
         dataSource.connection.use { conn ->
             conn.prepareStatement(sql).use { ps ->
-                ps.setInt(1, ownerCharacterId)
-                ps.setInt(2, ownerCharacterId)
-                ps.setInt(3, ownerCharacterId)
+                ps.setInt(1, ownerCharacterId) // target_ignores_owner
+                ps.setInt(2, ownerCharacterId) // owner_ignores_target
+                ps.setInt(3, ownerCharacterId) // target_has_owner_friend
+                ps.setInt(4, ownerCharacterId) // WHERE cf.owner_character_id
 
                 ps.executeQuery().use { rs ->
                     val out = mutableListOf<SocialFriendSnapshotRow>()
@@ -291,10 +298,12 @@ class CentralSocialRepository(
                         val rawWorld = rs.getObject("world_id")?.let { (it as Number).toInt() } ?: 0
                         val privateChat = rs.getInt("private_chat")
                         val targetIgnoresOwner = rs.getBoolean("target_ignores_owner")
+                        val ownerIgnoresTarget = rs.getBoolean("owner_ignores_target")
                         val targetHasOwnerFriend = rs.getBoolean("target_has_owner_friend")
 
                         val visibleOnline =
                             rawWorld > 0 &&
+                                    !ownerIgnoresTarget &&
                                     !targetIgnoresOwner &&
                                     (
                                             privateChat == 0 ||
@@ -375,22 +384,28 @@ class CentralSocialRepository(
             friend.previous_display_name AS friend_previous_display_name,
             COALESCE(filters.private_chat, 0) AS private_chat,
             EXISTS (
-                SELECT 1
-                FROM character_ignores i
-                WHERE i.owner_character_id = friend.id
-                  AND i.ignored_character_id = cf.owner_character_id
+        SELECT 1
+            FROM character_ignores i
+            WHERE i.owner_character_id = friend.id
+            AND i.ignored_character_id = cf.owner_character_id
             ) AS friend_ignores_owner,
             EXISTS (
-                SELECT 1
-                FROM character_friends reciprocal
-                WHERE reciprocal.owner_character_id = friend.id
-                  AND reciprocal.friend_character_id = cf.owner_character_id
+        SELECT 1
+            FROM character_ignores owner_ignore
+            WHERE owner_ignore.owner_character_id = cf.owner_character_id
+            AND owner_ignore.ignored_character_id = friend.id
+            ) AS owner_ignores_friend,
+            EXISTS (
+        SELECT 1
+            FROM character_friends reciprocal
+            WHERE reciprocal.owner_character_id = friend.id
+            AND reciprocal.friend_character_id = cf.owner_character_id
             ) AS friend_has_owner_added
-        FROM character_friends cf
-        JOIN account_characters friend ON friend.id = cf.friend_character_id
-        JOIN sessions owner_s ON owner_s.character_id = cf.owner_character_id
-        LEFT JOIN character_chat_filters filters ON filters.character_id = friend.id
-        WHERE cf.friend_character_id = ?
+            FROM character_friends cf
+            JOIN account_characters friend ON friend.id = cf.friend_character_id
+            JOIN sessions owner_s ON owner_s.character_id = cf.owner_character_id
+            LEFT JOIN character_chat_filters filters ON filters.character_id = friend.id
+            WHERE cf.friend_character_id = ?
         """.trimIndent()
 
         dataSource.connection.use { conn ->
@@ -403,14 +418,17 @@ class CentralSocialRepository(
                     while (rs.next()) {
                         val privateChat = rs.getInt("private_chat")
                         val friendIgnoresOwner = rs.getBoolean("friend_ignores_owner")
+                        val ownerIgnoresFriend = rs.getBoolean("owner_ignores_friend")
                         val friendHasOwnerAdded = rs.getBoolean("friend_has_owner_added")
                         val display = clientDisplayName(rs.getString("friend_display_name"))
+
                         if (display.isBlank()) {
                             continue
                         }
 
                         val visibleOnline =
                             onlineWorldId > 0 &&
+                                    !ownerIgnoresFriend &&
                                     !friendIgnoresOwner &&
                                     (
                                             privateChat == 0 ||
@@ -423,7 +441,9 @@ class CentralSocialRepository(
                                 ownerWorldId = rs.getInt("owner_world_id"),
                                 friendCharacterId = rs.getInt("friend_character_id"),
                                 friendDisplayName = display,
-                                friendPreviousDisplayName = clientPreviousDisplayName(rs.getString("friend_previous_display_name")),
+                                friendPreviousDisplayName = clientPreviousDisplayName(
+                                    rs.getString("friend_previous_display_name")
+                                ),
                                 visibleWorldId = if (visibleOnline) onlineWorldId else 0,
                             )
                     }
