@@ -1,5 +1,13 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
 rootProject.name = "OpenRune-Central-Server"
 
-include("openrune-central-common")
+include("central-common")
+include("central-worldlink")
+include("central-app")
 include("openrune-central-admin-web")
-include("openrune-central")

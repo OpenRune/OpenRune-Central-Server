@@ -77,8 +77,38 @@ tasks.named<JavaExec>("run") {
 }
 
 tasks.named<ShadowJar>("shadowJar") {
-    archiveFileName.set("central-server.jar")
+    archiveFileName.set("openrune-central-server.jar")
     mergeServiceFiles()
+}
+
+/**
+ * Maven `dev.or2:central-server` artifact: same merge rules as [shadowJar] but excludes
+ * `:central-common` and `:central-worldlink` from the fat JAR; consumers resolve them via the POM.
+ *
+ * [shadowJar] remains a single self-contained JAR for Docker / `-jar` workflows.
+ */
+val centralServerShadowJar =
+    tasks.register<ShadowJar>("centralServerShadowJar") {
+        group = "build"
+        description =
+            "Fat JAR for Maven dev.or2:central-server (bundles third-party deps; excludes central-common and central-worldlink)."
+        archiveClassifier.set("")
+        archiveBaseName.set("central-server")
+
+        from(sourceSets.main.get().output)
+        configurations = listOf(project.configurations.getByName("runtimeClasspath"))
+
+        mergeServiceFiles()
+        manifest.from(tasks.named<ShadowJar>("shadowJar").get().manifest)
+
+        dependencies {
+            exclude(project(":central-common"))
+            exclude(project(":central-worldlink"))
+        }
+    }
+
+tasks.named("build") {
+    dependsOn(tasks.named("shadowJar"))
 }
 
 // Shadow adds a fat `-all` variant (~120MB); skip it for Maven (GitHub hosting limit is 100MB).
@@ -100,6 +130,32 @@ publishing {
                 description.set(
                     "OpenRune Central (HTTP + world-link) as a library; embed in the game server or run standalone.",
                 )
+            }
+        }
+        create<MavenPublication>("centralServer") {
+            artifactId = "central-server"
+            artifact(centralServerShadowJar)
+            pom {
+                name.set("central-server")
+                description.set(
+                    "Runnable OpenRune Central fat JAR for Maven: bundles third-party libraries but not " +
+                        "dev.or2:central-common or dev.or2:central-worldlink (declared as runtime dependencies). " +
+                        "For a single self-contained JAR (e.g. Docker), use :central-app:shadowJar → openrune-central-server.jar.",
+                )
+                withXml {
+                    val projectNode = asNode()
+                    projectNode.appendNode("packaging", "jar")
+                    val dependenciesNode = projectNode.appendNode("dependencies")
+                    fun addRuntimeDep(artifactId: String) {
+                        val d = dependenciesNode.appendNode("dependency")
+                        d.appendNode("groupId", "dev.or2")
+                        d.appendNode("artifactId", artifactId)
+                        d.appendNode("version", project.version.toString())
+                        d.appendNode("scope", "runtime")
+                    }
+                    addRuntimeDep("central-common")
+                    addRuntimeDep("central-worldlink")
+                }
             }
         }
     }
