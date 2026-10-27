@@ -47,6 +47,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { RIGHTS_OPTIONS, parseRights } from "./rights";
 
 type Row = Record<string, unknown>;
 
@@ -65,20 +66,17 @@ const emptyWorld = () => ({
   login_gate_rights_enabled: "0",
   login_gate_whitelist_enabled: "0",
   login_min_total_level: "0",
-  login_min_rights_token: "modlevel.admin",
-  login_rights_select: "modlevel.admin",
+  login_min_rights_token: "ADMINISTRATOR",
+  login_rights_select: "ADMINISTRATOR",
   whitelist_usernames: "",
 });
 
-const MODLEVEL_RIGHTS_OPTIONS: { value: string; label: string }[] = [
-  { value: "modlevel.player", label: "Player mod" },
-  { value: "modlevel.moderator", label: "Moderator" },
-  { value: "modlevel.admin", label: "Administrator" },
-];
+/** A "Player" gate would let everyone in, so only staff levels are offered. */
+const GATE_RIGHTS_OPTIONS = RIGHTS_OPTIONS.filter((o) => o.value !== "NONE");
 
 function normalizeModLevelRightsToken(raw: unknown): string {
-  const t = String(raw ?? "").trim();
-  return MODLEVEL_RIGHTS_OPTIONS.some((o) => o.value === t) ? t : "modlevel.admin";
+  const r = parseRights(raw);
+  return r === "NONE" ? "ADMINISTRATOR" : r;
 }
 
 async function renameWorldId(db: BridgeDb, oldId: number, newId: number) {
@@ -1121,7 +1119,7 @@ WHERE world_id = $15`,
                             <SelectValue placeholder="Mod level" />
                           </SelectTrigger>
                           <SelectContent>
-                            {MODLEVEL_RIGHTS_OPTIONS.map((o) => (
+                            {GATE_RIGHTS_OPTIONS.map((o) => (
                               <SelectItem key={o.value} value={o.value}>
                                 {o.label}
                               </SelectItem>

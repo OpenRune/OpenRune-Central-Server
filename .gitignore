@@ -54,3 +54,6 @@ admin-web/dist/
 ### Mac OS ###
 .DS_Store
 central-config.properties
+.php-preview-router.php
+.idea/gradle.xml
+.idea/gradle.xml

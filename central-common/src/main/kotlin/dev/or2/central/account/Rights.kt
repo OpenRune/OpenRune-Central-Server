@@ -30,10 +30,17 @@ public enum class Rights(
     public companion object {
         public fun fromLevel(level: Int): Rights = entries.firstOrNull { it.level == level } ?: NONE
 
+        /**
+         * Accepts the canonical names (`MOD`, `ADMINISTRATOR`) plus the aliases older admin-web builds
+         * wrote (`modlevel.moderator`, `modlevel.admin`, ...). Unknown tokens are [NONE].
+         */
         public fun parse(name: String): Rights {
-            val normalized = name.trim()
-            if (normalized.equals("ADMIN", ignoreCase = true)) return ADMINISTRATOR
-            return entries.firstOrNull { it.name.equals(normalized, ignoreCase = true) } ?: NONE
+            val normalized = name.trim().removePrefix("modlevel.").uppercase()
+            return when (normalized) {
+                "MOD", "MODERATOR" -> MOD
+                "ADMIN", "ADMINISTRATOR", "OWNER" -> ADMINISTRATOR
+                else -> NONE
+            }
         }
 
         public fun fromRightsColumn(raw: String?): Rights {

@@ -19,6 +19,7 @@ import {
   PUNISHMENT_UPDATE_STATUS,
 } from "./queries";
 import { validateStaffDisplayNameFormat } from "./displayNamePolicy";
+import { RIGHTS_OPTIONS, type RightsName, rightsColumnValue, rightsFromColumn, rightsLabel } from "./rights";
 import { ResultTable } from "./ResultTable";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,12 +40,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn } from "@/lib/utils";
 
 const PAGE = 25;
-const RIGHTS_PRESETS = [
-  "modlevel.player",
-  "modlevel.moderator",
-  "modlevel.admin",
-  "modlevel.owner",
-] as const;
 
 type AccountRow = Record<string, unknown>;
 
@@ -66,7 +61,7 @@ export function AccountsTab({ db }: { db: BridgeDb }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<AccountRow | null>(null);
-  const [rightsEdit, setRightsEdit] = useState("");
+  const [rightsEdit, setRightsEdit] = useState<RightsName>("NONE");
   const [sessionsRes, setSessionsRes] = useState<QueryResultPayload | null>(null);
   const [charsRes, setCharsRes] = useState<QueryResultPayload | null>(null);
   const [charsNote, setCharsNote] = useState<string | null>(null);
@@ -91,14 +86,6 @@ export function AccountsTab({ db }: { db: BridgeDb }) {
   const [renameInput, setRenameInput] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
   const [renameInfo, setRenameInfo] = useState<string | null>(null);
-  const rightsOptions = useMemo(() => {
-    const s = new Set<string>(RIGHTS_PRESETS);
-    const current = rightsEdit.trim();
-    if (current.length > 0) {
-      s.add(current);
-    }
-    return [...s];
-  }, [rightsEdit]);
 
   const accountCharacters = useMemo(() => {
     const rows = charsRes?.rows ?? [];
@@ -185,7 +172,7 @@ export function AccountsTab({ db }: { db: BridgeDb }) {
       const acc = await db.query(ACCOUNT_BY_ID, [id]);
       const row = acc.rows[0] ?? null;
       setDetail(row);
-      setRightsEdit(String(row?.rights ?? "modlevel.player"));
+      setRightsEdit(rightsFromColumn(row?.rights));
       try {
         const se = await db.query(ACCOUNT_SESSIONS, [id]);
         setSessionsRes({
@@ -370,7 +357,7 @@ export function AccountsTab({ db }: { db: BridgeDb }) {
     setErr(null);
     setSaveInfo(null);
     try {
-      await db.query(`UPDATE accounts SET rights = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [rightsEdit, selectedId]);
+      await db.query(`UPDATE accounts SET rights = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [rightsColumnValue(rightsEdit), selectedId]);
       setSaveInfo("Saved.");
       await loadList();
       await loadDetail(selectedId);
@@ -426,7 +413,7 @@ export function AccountsTab({ db }: { db: BridgeDb }) {
               <TableCell>
                 <code className="text-sm">{String(row.username)}</code>
               </TableCell>
-              <TableCell className="max-w-[220px] truncate text-xs text-muted-foreground">{String(row.rights ?? "")}</TableCell>
+              <TableCell className="max-w-[220px] truncate text-xs text-muted-foreground">{rightsLabel(rightsFromColumn(row.rights))}</TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -487,14 +474,14 @@ export function AccountsTab({ db }: { db: BridgeDb }) {
 
                     <div className="space-y-2">
                       <Label htmlFor="acct-rights-select">Rights</Label>
-                      <Select value={rightsEdit} onValueChange={setRightsEdit}>
+                      <Select value={rightsEdit} onValueChange={(v) => setRightsEdit(v as RightsName)}>
                         <SelectTrigger id="acct-rights-select">
                           <SelectValue placeholder="Select rights" />
                         </SelectTrigger>
                         <SelectContent>
-                          {rightsOptions.map((v) => (
-                            <SelectItem key={v} value={v}>
-                              {v}
+                          {RIGHTS_OPTIONS.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
