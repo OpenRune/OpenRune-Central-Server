@@ -1,5 +1,7 @@
 package dev.or2.central.notify.handlers
 
+import dev.or2.central.clan.ClanService
+import dev.or2.central.friendchat.FriendChatService
 import dev.or2.central.notify.NotifyBroadcaster
 import dev.or2.central.notify.NotifyJson.int
 import dev.or2.central.notify.NotifyJson.long
@@ -15,6 +17,8 @@ import org.slf4j.LoggerFactory
 class CharacterDisplayNameNotifyHandler(
     private val broadcaster: NotifyBroadcaster,
     private val socialService: SocialService,
+    private val clanService: ClanService,
+    private val friendChatService: FriendChatService,
 ) : PgNotifyHandler {
     private val log = LoggerFactory.getLogger(CharacterDisplayNameNotifyHandler::class.java)
 
@@ -26,6 +30,10 @@ class CharacterDisplayNameNotifyHandler(
         val previousDisplayName = root.string("previous_display_name")
         runCatching {
             socialService.updateDisplayName(characterId, displayName, previousDisplayName)
+            displayName?.let {
+                clanService.updateDisplayName(characterId, it)
+                friendChatService.updateDisplayName(characterId, it)
+            }
             val worlds = broadcaster.worldsForAccount(accountId)
             val frame =
                 ServerDisplayNameSyncPacket.encode(

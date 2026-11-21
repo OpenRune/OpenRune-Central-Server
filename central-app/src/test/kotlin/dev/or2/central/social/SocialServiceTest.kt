@@ -56,6 +56,7 @@ class SocialServiceTest {
                 repository = unusedRepository,
                 presence = presence,
                 registry = registry,
+                liveChat = LiveChatPresenceIndex(),
             )
 
         val reply =
@@ -104,6 +105,7 @@ class SocialServiceTest {
                 repository = unusedRepository,
                 presence = presence,
                 registry = WorldConnectionRegistry(),
+                liveChat = LiveChatPresenceIndex(),
             )
 
         val reply =

@@ -13,7 +13,7 @@ val hostingDirectory: File =
     System.getenv("HOSTING_DIRECTORY")?.let { File(it) }
         ?: File("C:\\Users\\home\\Desktop\\Programming\\Rsps\\OpenRune\\hosting")
 
-val buildNumber = System.getenv("BUILD_NUMBER") ?: "2.0.2"
+val buildNumber = System.getenv("BUILD_NUMBER") ?: "2.0.3"
 
 val centralPublishModules =
     listOf(

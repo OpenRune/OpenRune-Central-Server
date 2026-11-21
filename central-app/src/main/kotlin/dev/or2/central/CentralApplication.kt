@@ -39,6 +39,17 @@ import dev.or2.central.notify.handlers.WorldBroadcastNotifyHandler
 import dev.or2.central.notify.handlers.WorldListInvalidateHandler
 import dev.or2.central.notify.handlers.WorldRebootNotifyHandler
 import dev.or2.central.social.CentralSocialRepository
+import dev.or2.central.clan.CentralClanRepository
+import dev.or2.central.clan.CentralClanEconomyRepository
+import dev.or2.central.clan.ClanAdminAuthorizer
+import dev.or2.central.clan.ClanEconomyService
+import dev.or2.central.clan.ClanLoader
+import dev.or2.central.clan.ClanService as CentralClanService
+import dev.or2.central.clan.ClanStore
+import dev.or2.central.friendchat.CentralFriendChatRepository
+import dev.or2.central.friendchat.FriendChatEffectiveSettings
+import dev.or2.central.pvpa.PvPAGroupingAuthority
+import dev.or2.central.friendchat.FriendChatService as CentralFriendChatService
 import dev.or2.central.social.OnlinePresenceIndex
 import dev.or2.central.social.SocialGraphLoader
 import dev.or2.central.social.SocialGraphPersistence
@@ -57,12 +68,21 @@ import dev.or2.central.worldlink.handlers.LogoutHandler
 import dev.or2.central.worldlink.handlers.PushSubscribeHandler
 import dev.or2.central.worldlink.handlers.DiscordLinkHandler
 import dev.or2.central.worldlink.handlers.SocialHandler
+import dev.or2.central.worldlink.handlers.ClanHandler
+import dev.or2.central.worldlink.handlers.ClanEconomyHandler
+import dev.or2.central.worldlink.handlers.ClanSystemBroadcastHandler
+import dev.or2.central.worldlink.handlers.FriendChatHandler
+import dev.or2.central.worldlink.handlers.LiveChatHandler
+import dev.or2.central.pvpa.PvPAGroupingState
+import dev.or2.central.worldlink.handlers.PvPAGroupingHandler
+import dev.or2.central.social.LiveChatPresenceIndex
 import dev.or2.central.worldlink.net.WorldLinkServer
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationStarted
 import io.ktor.server.application.ApplicationStopped
 import io.ktor.server.application.install
+import io.ktor.server.application.log
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.forwardedheaders.XForwardedHeaders
 import io.ktor.server.routing.routing
@@ -124,6 +144,19 @@ object CentralApplication {
             runCatching { worldListCache.rebuild() }
             runCatching { javConfigCache.refresh() }
             val scheduler = koin.get<java.util.concurrent.ScheduledExecutorService>()
+            val processClanTimersAndLiveRosters = {
+                runCatching { koin.get<CentralClanService>().processOwnershipTimers() }
+                    .onFailure { application.log.warn("Clan ownership timer processing failed", it) }
+                runCatching { koin.get<LiveChatHandler>().reconcileTimedClanChanges() }
+                    .onFailure { application.log.warn("Timed live-clan roster reconciliation failed", it) }
+            }
+            processClanTimersAndLiveRosters()
+            scheduler.scheduleAtFixedRate(
+                { processClanTimersAndLiveRosters() },
+                60,
+                60,
+                TimeUnit.SECONDS,
+            )
             val sampleSec = config.analytics.onlineSampleIntervalSeconds.toLong().coerceAtLeast(30)
             scheduler.scheduleAtFixedRate(
                 { runCatching { koin.get<OnlineSampler>().sampleNow() } },
@@ -188,6 +221,19 @@ object CentralApplication {
             single { WorldConnectionRegistry() }
             single { WorldPresenceService(get(), get(), get(), get()) }
             single { CentralSocialRepository(get()) }
+            single { CentralClanRepository(get()) }
+            single { ClanAdminAuthorizer(get()) }
+            single { CentralClanEconomyRepository(get()) }
+            single {
+                val store = ClanStore()
+                ClanLoader(get()).loadInto(store)
+                store
+            }
+            single { CentralClanService(get(), get(), get(), get(), get(), get(), get()) }
+            single { ClanEconomyService(get(), get(), get(), get()) }
+            single { CentralFriendChatRepository(get()) }
+            single { FriendChatEffectiveSettings(get(), get()) }
+            single { CentralFriendChatService(get(), get(), get(), get()) }
             single {
                 val store = SocialGraphStore()
                 SocialGraphLoader(get()).loadInto(store)
@@ -217,6 +263,7 @@ object CentralApplication {
                     get(),
                     get(),
                     config.diagnostics.socialPmTraceLogs,
+                    get(),
                 )
             }
             single {
@@ -239,7 +286,20 @@ object CentralApplication {
             single { PushSubscribeHandler() }
             single { HeartbeatHandler(get()) }
             single { LogoutHandler(get(), get(), get()) }
-            single { SocialHandler(get()) }
+            single { SocialHandler(get(), get()) }
+            single { ClanHandler(get(), get()) }
+            single { FriendChatHandler(get(), get(), get()) }
+            single { LiveChatPresenceIndex() }
+            single { LiveChatHandler(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+            single { PvPAGroupingState() }
+            single {
+                PvPAGroupingAuthority(get<PvPAGroupingState>()) { characterId, worldId ->
+                    get<OnlinePresenceIndex>().isOnline(characterId, worldId)
+                }
+            }
+            single { PvPAGroupingHandler(get(), get(), get()) }
+            single { ClanSystemBroadcastHandler(get(), get()) }
+            single { ClanEconomyHandler(get()) }
             single {
                 DiscordRuntime.create(
                     dataSource = get(),
@@ -262,6 +322,12 @@ object CentralApplication {
                     heartbeatHandler = get(),
                     logoutHandler = get(),
                     socialHandler = get(),
+                    clanHandler = get(),
+                    friendChatHandler = get(),
+                    liveChatHandler = get(),
+                    pvpaGroupingHandler = get(),
+                    clanSystemBroadcastHandler = get(),
+                    clanEconomyHandler = get(),
                     discordLinkHandler = get(),
                     registry = get(),
                     worldPresenceService = get(),
@@ -275,7 +341,7 @@ object CentralApplication {
             single { WorldRebootNotifyHandler(get()) }
             single { WorldBroadcastNotifyHandler(get()) }
             single { WorldListInvalidateHandler(get()) }
-            single { CharacterDisplayNameNotifyHandler(get(), get()) }
+            single { CharacterDisplayNameNotifyHandler(get(), get(), get(), get()) }
             single { AccountDiscordIdNotifyHandler(get()) }
             single {
                 val koin = getKoin()

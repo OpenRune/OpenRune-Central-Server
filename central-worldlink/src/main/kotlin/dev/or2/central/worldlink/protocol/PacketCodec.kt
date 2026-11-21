@@ -34,6 +34,18 @@ enum class FieldKind(
 
     /** `u16 count` + up to [maxEntries] × (display name + previous name). */
     SOCIAL_IGNORE_LIST(maxEntries = dev.or2.central.worldlink.protocol.social.SocialLimits.MAX_LIST_ENTRIES),
+
+    /** Variable clan payload; structural validation is performed by ClanPackets decoders. */
+    CLAN_VARIABLE(maxBytes = dev.or2.central.worldlink.protocol.clan.ClanLimits.MAX_CLAN_FRAME_BODY, optional = true),
+    CLAN_VARIABLE_REQUIRED(maxBytes = dev.or2.central.worldlink.protocol.clan.ClanLimits.MAX_CLAN_FRAME_BODY),
+
+    /** Variable Friends Chat snapshot payload. */
+    FRIEND_CHAT_VARIABLE(maxBytes = dev.or2.central.worldlink.protocol.friendchat.FriendChatLimits.MAX_FRAME_BODY, optional = true),
+    FRIEND_CHAT_VARIABLE_REQUIRED(maxBytes = dev.or2.central.worldlink.protocol.friendchat.FriendChatLimits.MAX_FRAME_BODY),
+
+    /** Variable clan hall economy payload. */
+    CLAN_ECONOMY_VARIABLE(maxBytes = dev.or2.central.worldlink.protocol.claneconomy.ClanEconomyLimits.MAX_FRAME_BODY, optional = true),
+    CLAN_ECONOMY_VARIABLE_REQUIRED(maxBytes = dev.or2.central.worldlink.protocol.claneconomy.ClanEconomyLimits.MAX_FRAME_BODY),
 }
 
 @Target(AnnotationTarget.CLASS)
@@ -72,13 +84,13 @@ data class PacketDef(
         if (this === other) return true
         if (other !is PacketDef) return false
         return opcode == other.opcode &&
-            name == other.name &&
-            direction == other.direction &&
-            minBodyBytes == other.minBodyBytes &&
-            maxBodyBytes == other.maxBodyBytes &&
-            fields == other.fields &&
-            allowedBodyBytes.contentEquals(other.allowedBodyBytes) &&
-            sourceClass == other.sourceClass
+                name == other.name &&
+                direction == other.direction &&
+                minBodyBytes == other.minBodyBytes &&
+                maxBodyBytes == other.maxBodyBytes &&
+                fields == other.fields &&
+                allowedBodyBytes.contentEquals(other.allowedBodyBytes) &&
+                sourceClass == other.sourceClass
     }
 
     override fun hashCode(): Int {
@@ -121,7 +133,7 @@ object PacketBodySize {
             FieldKind.STRING_LOGIN_RIGHTS,
             FieldKind.STRING_LOGIN_SCRIPT,
             FieldKind.STRING_PM,
-            -> {
+                -> {
                 require(maxBytes > 0) { "$this requires maxBytes" }
                 WireSize(2, 2 + maxBytes)
             }
@@ -144,6 +156,30 @@ object PacketBodySize {
                 val entryMax = lenPrefixedUtf8(96) + lenPrefixedUtf8(96)
                 WireSize(2, 2 + maxEntries * entryMax)
             }
+            FieldKind.CLAN_VARIABLE -> {
+                require(maxBytes > 0) { "$this requires maxBytes" }
+                WireSize(0, maxBytes)
+            }
+            FieldKind.CLAN_VARIABLE_REQUIRED -> {
+                require(maxBytes > 0) { "$this requires maxBytes" }
+                WireSize(1, maxBytes)
+            }
+            FieldKind.FRIEND_CHAT_VARIABLE -> {
+                require(maxBytes > 0) { "$this requires maxBytes" }
+                WireSize(0, maxBytes)
+            }
+            FieldKind.FRIEND_CHAT_VARIABLE_REQUIRED -> {
+                require(maxBytes > 0) { "$this requires maxBytes" }
+                WireSize(1, maxBytes)
+            }
+            FieldKind.CLAN_ECONOMY_VARIABLE -> {
+                require(maxBytes > 0) { "$this requires maxBytes" }
+                WireSize(0, maxBytes)
+            }
+            FieldKind.CLAN_ECONOMY_VARIABLE_REQUIRED -> {
+                require(maxBytes > 0) { "$this requires maxBytes" }
+                WireSize(1, maxBytes)
+            }
         }
 
     private fun lenPrefixedUtf8(maxUtf8: Int): Int = 2 + maxUtf8
@@ -162,7 +198,7 @@ interface OutboundPacket<P> {
 class PacketDecodeException(message: String) : IllegalArgumentException(message)
 
 object PacketLimits {
-    const val MAX_INBOUND_FRAMED_BODY: Int = 16 * 1024
+    const val MAX_INBOUND_FRAMED_BODY: Int = 256 * 1024
     const val WORLD_KEY_MAX_BYTES: Int = 4096
     const val LOGIN_USERNAME_MAX_UTF8: Int = 64 * 4
     const val LOGIN_PASSWORD_MAX_UTF8: Int = 256 * 4

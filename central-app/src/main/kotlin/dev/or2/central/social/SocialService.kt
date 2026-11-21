@@ -1,6 +1,10 @@
 package dev.or2.central.social
 
 import dev.or2.central.worldlink.WorldConnectionRegistry
+import dev.or2.central.worldlink.protocol.livechat.LiveChatKind
+import dev.or2.central.worldlink.protocol.livechat.LiveChatMemberWire
+import dev.or2.central.worldlink.protocol.livechat.LiveChatPackets
+import dev.or2.central.worldlink.protocol.livechat.LiveChatRosterPush
 import dev.or2.central.worldlink.protocol.WorldOpcodes
 import dev.or2.central.worldlink.protocol.social.FriendPresencePush
 import dev.or2.central.worldlink.protocol.social.PmTraceLog
@@ -19,6 +23,7 @@ class SocialService(
     private val presence: SocialPresenceResolver,
     private val registry: WorldConnectionRegistry,
     private val pmTraceLogs: Boolean = false,
+    private val liveChat: LiveChatPresenceIndex,
 ) {
     private val log = LoggerFactory.getLogger(SocialService::class.java)
 
@@ -41,11 +46,69 @@ class SocialService(
         if (characterId == null || characterId <= 0) {
             return
         }
+        // Preserve the existing recipient resolution ordering while preventing an old world's
+        // delayed logout from erasing a newer-world login.
+        if (!onlineIndex.isOnline(characterId, worldId)) return
         val recipients = graph.friendPresenceRecipientsForOffline(characterId, worldId, onlineIndex)
+        if (onlineIndex.removeIfOnWorld(characterId, worldId) == null) return
+        removeLiveChatCharacter(worldId, characterId)
         for (recipient in recipients) {
             sendFriendPresence(recipient)
         }
-        onlineIndex.remove(characterId)
+    }
+
+    /** Removes only the departing world's live-chat membership, never the hopped session. */
+    private fun removeLiveChatCharacter(worldId: Int, characterId: Int) {
+        for (kind in LiveChatPresenceIndex.Kind.entries) {
+            val key = liveChat.currentChannel(kind, characterId) ?: continue
+            val previousWorlds = liveChat.recipientWorlds(key)
+            val changed = liveChat.leave(kind, characterId, worldId) ?: continue
+            publishLiveChatRoster(changed, previousWorlds + worldId)
+        }
+    }
+
+    /** Also clears orphaned roster entries that had no remaining login/session record. */
+    fun removeLiveChatWorld(worldId: Int) {
+        if (worldId <= 0) return
+        val stale = liveChat.removeWorld(worldId)
+        for (roster in stale) {
+            // Former world's entries have already been removed. Current recipients receive the update.
+            publishLiveChatRoster(roster, liveChat.recipientWorlds(roster.channel))
+        }
+    }
+
+    private fun publishLiveChatRoster(
+        roster: LiveChatPresenceIndex.Roster,
+        recipients: Collection<Int>,
+    ) {
+        val kind = when (roster.channel.kind) {
+            LiveChatPresenceIndex.Kind.FRIEND_CHAT -> LiveChatKind.FRIENDS_CHAT
+            LiveChatPresenceIndex.Kind.MAIN_CLAN -> LiveChatKind.MAIN_CLAN
+            LiveChatPresenceIndex.Kind.GUEST_CLAN -> LiveChatKind.GUEST_CLAN
+        }
+        val frame = LiveChatPackets.encodeRoster(
+            LiveChatRosterPush(
+                kind,
+                roster.channel.id,
+                roster.revision,
+                roster.members.map { LiveChatMemberWire(it.characterId, it.displayName, it.worldId, it.rank) },
+            ),
+        )
+        val worlds = recipients.filter { it > 0 }.distinct()
+        worlds.forEach { registry.push(it, frame) }
+        // Each world builds one clan list from both rosters, so it must hold the other one too.
+        val sibling = liveChat.clanSibling(roster.channel) ?: return
+        val siblingRoster = liveChat.snapshot(sibling)
+        val siblingKind = if (sibling.kind == LiveChatPresenceIndex.Kind.MAIN_CLAN) LiveChatKind.MAIN_CLAN else LiveChatKind.GUEST_CLAN
+        val siblingFrame = LiveChatPackets.encodeRoster(
+            LiveChatRosterPush(
+                siblingKind,
+                siblingRoster.channel.id,
+                siblingRoster.revision,
+                siblingRoster.members.map { LiveChatMemberWire(it.characterId, it.displayName, it.worldId, it.rank) },
+            ),
+        )
+        worlds.forEach { registry.push(it, siblingFrame) }
     }
 
     fun handlePmRelay(
@@ -277,7 +340,6 @@ class SocialService(
                 persistence.enqueueFriendDelete(characterId, targetCharacterId)
                 val after = graph.visiblePresenceRecipients(characterId, friendWorld, onlineIndex)
                 sendPresenceVisibilityChanges(before, after)
-                pushFriendOfflineToOwner(characterId, targetCharacterId)
                 SocialReply.Ok(SocialPackets.encodeSocialOk())
             }
             SocialNameAction.IgnoreAdd -> {
@@ -374,24 +436,6 @@ class SocialService(
                 friendDisplayName = profile.displayName,
                 friendPreviousDisplayName = profile.previousDisplayName,
                 visibleWorldId = visible,
-            ),
-        )
-    }
-
-    private fun pushFriendOfflineToOwner(
-        ownerCharacterId: Int,
-        friendCharacterId: Int,
-    ) {
-        val ownerWorld = onlineIndex.worldFor(ownerCharacterId) ?: return
-        val profile = graph.profile(friendCharacterId) ?: return
-        sendFriendPresence(
-            FriendPresenceRecipient(
-                ownerCharacterId = ownerCharacterId,
-                ownerWorldId = ownerWorld,
-                friendCharacterId = friendCharacterId,
-                friendDisplayName = profile.displayName,
-                friendPreviousDisplayName = profile.previousDisplayName,
-                visibleWorldId = 0,
             ),
         )
     }

@@ -9,6 +9,12 @@ import dev.or2.central.worldlink.handlers.PushSubscribeHandler
 import dev.or2.central.worldlink.protocol.PacketCatalog
 import dev.or2.central.worldlink.protocol.WorldOpcodes
 import dev.or2.central.worldlink.handlers.DiscordLinkHandler
+import dev.or2.central.worldlink.handlers.ClanHandler
+import dev.or2.central.worldlink.handlers.ClanEconomyHandler
+import dev.or2.central.worldlink.handlers.ClanSystemBroadcastHandler
+import dev.or2.central.worldlink.handlers.FriendChatHandler
+import dev.or2.central.worldlink.handlers.LiveChatHandler
+import dev.or2.central.worldlink.handlers.PvPAGroupingHandler
 import dev.or2.central.worldlink.handlers.SocialHandler
 import dev.or2.central.worldlink.protocol.packets.outgoing.impl.HelloRejectPacket
 import dev.or2.central.worldlink.protocol.packets.outgoing.impl.LoginFailPacket
@@ -22,6 +28,12 @@ class WorldLinkHandler(
     private val heartbeatHandler: HeartbeatHandler,
     private val logoutHandler: LogoutHandler,
     private val socialHandler: SocialHandler,
+    private val clanHandler: ClanHandler,
+    private val friendChatHandler: FriendChatHandler,
+    private val liveChatHandler: LiveChatHandler,
+    private val pvpaGroupingHandler: PvPAGroupingHandler,
+    private val clanSystemBroadcastHandler: ClanSystemBroadcastHandler,
+    private val clanEconomyHandler: ClanEconomyHandler,
     private val discordLinkHandler: DiscordLinkHandler,
     private val registry: WorldConnectionRegistry,
     private val worldPresenceService: WorldPresenceService,
@@ -55,7 +67,34 @@ class WorldLinkHandler(
                 WorldOpcodes.OP_WORLD_IGNORE_DEL,
                 WorldOpcodes.OP_WORLD_CHAT_FILTERS,
                 WorldOpcodes.OP_WORLD_SOCIAL_SYNC,
-                -> socialHandler.handle(connection, input.opcode, input)
+                    -> socialHandler.handle(connection, input.opcode, input)
+                in WorldOpcodes.OP_WORLD_CLAN_SYNC..WorldOpcodes.OP_WORLD_CLAN_APPLICATION_VERDICT_ACK ->
+                    clanHandler.handle(connection, input.opcode, input)
+                WorldOpcodes.OP_WORLD_CLAN_ADMIN_MUTATION,
+                WorldOpcodes.OP_WORLD_CLAN_MEMBER_STATS,
+                WorldOpcodes.OP_WORLD_CLAN_GUEST_SELECTION,
+                WorldOpcodes.OP_WORLD_CLAN_GUEST_KICK,
+                WorldOpcodes.OP_WORLD_CLAN_APPLICATION_WITHDRAW,
+                    -> clanHandler.handle(connection, input.opcode, input)
+                in WorldOpcodes.OP_WORLD_FRIENDCHAT_SYNC..WorldOpcodes.OP_WORLD_FRIENDCHAT_SET_RANK ->
+                    friendChatHandler.handle(connection, input.opcode, input)
+                WorldOpcodes.OP_WORLD_LIVE_CHAT_JOIN,
+                WorldOpcodes.OP_WORLD_LIVE_CHAT_LEAVE,
+                WorldOpcodes.OP_WORLD_LIVE_CHAT_MESSAGE,
+                    -> liveChatHandler.handle(connection, input.opcode, input)
+                WorldOpcodes.OP_WORLD_PVPA_GROUPING -> pvpaGroupingHandler.handle(connection, input)
+                WorldOpcodes.OP_WORLD_CLAN_SYSTEM_BROADCAST -> clanSystemBroadcastHandler.handle(connection, input)
+                WorldOpcodes.OP_WORLD_FRIENDCHAT_RESTORE,
+                WorldOpcodes.OP_WORLD_FRIENDCHAT_CLEAR_RESTORE,
+                WorldOpcodes.OP_WORLD_FRIENDCHAT_KICK,
+                WorldOpcodes.OP_WORLD_FRIENDCHAT_SET_FIELD,
+                    -> friendChatHandler.handle(connection, input.opcode, input)
+                WorldOpcodes.OP_WORLD_CLAN_ECONOMY_SYNC,
+                WorldOpcodes.OP_WORLD_CLAN_ECONOMY_PREPARE,
+                WorldOpcodes.OP_WORLD_CLAN_PARTY_DROP_PREPARE,
+                WorldOpcodes.OP_WORLD_CLAN_ECONOMY_COMMIT,
+                WorldOpcodes.OP_WORLD_CLAN_ECONOMY_ABORT,
+                    -> clanEconomyHandler.handle(connection, input.opcode, input)
                 WorldOpcodes.OP_GAME_DISCORD_LINK_PENDING ->
                     discordLinkHandler.handlePending(connection, input)
                 WorldOpcodes.OP_GAME_DISCORD_LINK_INVALIDATE ->

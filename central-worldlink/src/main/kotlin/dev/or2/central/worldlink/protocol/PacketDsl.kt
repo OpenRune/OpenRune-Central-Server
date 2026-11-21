@@ -35,6 +35,8 @@ class FrameReader(
 
     fun readUnsignedByte(): Int = buf.readUnsignedByte().toInt()
 
+    fun readSignedByte(): Int = buf.readByte().toInt()
+
     fun readInt(): Int = buf.readInt()
 
     fun readLong(): Long = buf.readLong()

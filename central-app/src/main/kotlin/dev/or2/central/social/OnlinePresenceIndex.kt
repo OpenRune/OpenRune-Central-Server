@@ -29,6 +29,16 @@ class OnlinePresenceIndex {
             byCharacterId.remove(characterId)
         }
 
+    /** Remove only if this character still belongs to the departing world. */
+    fun removeIfOnWorld(characterId: Int, worldId: Int): OnlineCharacter? {
+        if (characterId <= 0 || worldId <= 0) return null
+        while (true) {
+            val current = byCharacterId[characterId] ?: return null
+            if (current.worldId != worldId) return null
+            if (byCharacterId.remove(characterId, current)) return current
+        }
+    }
+
     fun removeAllOnWorld(worldId: Int): List<OnlineCharacter> {
         if (worldId <= 0) {
             return emptyList()
@@ -36,7 +46,7 @@ class OnlinePresenceIndex {
         val removed = mutableListOf<OnlineCharacter>()
         for ((characterId, entry) in byCharacterId) {
             if (entry.worldId == worldId) {
-                byCharacterId.remove(characterId)?.let(removed::add)
+                if (byCharacterId.remove(characterId, entry)) removed.add(entry)
             }
         }
         return removed
@@ -49,7 +59,7 @@ class OnlinePresenceIndex {
         val removed = mutableListOf<OnlineCharacter>()
         for ((characterId, entry) in byCharacterId) {
             if (entry.accountId == accountId) {
-                byCharacterId.remove(characterId)?.let(removed::add)
+                if (byCharacterId.remove(characterId, entry)) removed.add(entry)
             }
         }
         return removed

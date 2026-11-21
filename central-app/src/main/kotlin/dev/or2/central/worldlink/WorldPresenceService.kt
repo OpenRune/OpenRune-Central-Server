@@ -26,6 +26,8 @@ class WorldPresenceService(
             val characterId = session.characterId ?: continue
             socialService.onCharacterOffline(worldId, characterId)
         }
+        // Session records alone cannot account for orphaned live-channel entries.
+        socialService.removeLiveChatWorld(worldId)
         val sessionsRemoved = sessionRepository.deleteByWorldId(worldId)
         val charactersCleared = clearCharacterOnlineMarkers(worldId)
         if (sessionsRemoved > 0 || charactersCleared > 0) {

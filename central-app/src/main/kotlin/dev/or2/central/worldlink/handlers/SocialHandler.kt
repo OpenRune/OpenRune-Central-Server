@@ -12,9 +12,11 @@ import dev.or2.central.worldlink.protocol.packets.incoming.impl.WorldIgnoreAddPa
 import dev.or2.central.worldlink.protocol.packets.incoming.impl.WorldIgnoreDelPacket
 import dev.or2.central.worldlink.protocol.packets.incoming.impl.WorldPmRelayPacket
 import dev.or2.central.worldlink.protocol.packets.incoming.impl.WorldSocialSyncPacket
+import dev.or2.central.worldlink.protocol.social.SocialPackets
 
 class SocialHandler(
     private val socialService: SocialService,
+    private val liveChatHandler: LiveChatHandler,
 ) {
     fun handle(
         connection: WorldConnection,
@@ -33,8 +35,14 @@ class SocialHandler(
                         socialService.handleFriendAdd(connection.worldId, WorldFriendAddPacket.decode(input))
                     WorldOpcodes.OP_WORLD_FRIEND_DEL ->
                         socialService.handleFriendDel(connection.worldId, WorldFriendDelPacket.decode(input))
-                    WorldOpcodes.OP_WORLD_IGNORE_ADD ->
-                        socialService.handleIgnoreAdd(connection.worldId, WorldIgnoreAddPacket.decode(input))
+                    WorldOpcodes.OP_WORLD_IGNORE_ADD -> {
+                        val request = WorldIgnoreAddPacket.decode(input)
+                        val result = socialService.handleIgnoreAdd(connection.worldId, request)
+                        if (result is SocialService.SocialReply.Ok) {
+                            liveChatHandler.reconcileFriendChatOwnerIgnore(request.characterId)
+                        }
+                        result
+                    }
                     WorldOpcodes.OP_WORLD_IGNORE_DEL ->
                         socialService.handleIgnoreDel(connection.worldId, WorldIgnoreDelPacket.decode(input))
                     WorldOpcodes.OP_WORLD_CHAT_FILTERS ->
@@ -56,11 +64,11 @@ class SocialHandler(
     private fun socialNotAllowed(opcode: Int): HandlerResult =
         HandlerResult.Reply(
             if (opcode == WorldOpcodes.OP_WORLD_SOCIAL_SYNC) {
-                dev.or2.central.worldlink.protocol.social.SocialPackets.encodeSocialSyncFail(
+                SocialPackets.encodeSocialSyncFail(
                     WorldOpcodes.SOCIAL_FAIL_NOT_ALLOWED,
                 )
             } else {
-                dev.or2.central.worldlink.protocol.social.SocialPackets.encodeSocialFail(
+                SocialPackets.encodeSocialFail(
                     WorldOpcodes.SOCIAL_FAIL_NOT_ALLOWED,
                 )
             },
